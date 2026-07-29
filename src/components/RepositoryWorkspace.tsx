@@ -60,7 +60,9 @@ import type {
   RepositoryTab,
   RepositoryScript,
   TerminalKind,
+  TerminalSession,
 } from "../types";
+import { AiTerminalModal } from "./AiTerminalModal";
 import { CommitModal } from "./CommitModal";
 import { FileTree } from "./FileTree";
 import { RepositoryMark } from "./RepositoryMark";
@@ -82,6 +84,14 @@ interface CompareRequest {
 
 function getParams() {
   return routeParams();
+}
+
+function readableError(caught: unknown, fallback: string) {
+  if (!(caught instanceof Error)) return fallback;
+  return caught.message.replace(
+    /^Error invoking remote method '[^']+': Error:\s*/i,
+    "",
+  );
 }
 
 function initialTab(): RepositoryTab {
@@ -579,7 +589,7 @@ export function RepositoryWorkspace({
     provider: AiProvider,
     action: AiTerminalAction,
     executablePath: string | null,
-  ) => Promise<void>;
+  ) => Promise<TerminalSession>;
 }) {
   const repositories = useMemo(() => data?.repositories ?? [], [data?.repositories]);
   const params = getParams();
@@ -621,6 +631,11 @@ export function RepositoryWorkspace({
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiRequestId, setAiRequestId] = useState<string | null>(null);
+  const [aiTerminal, setAiTerminal] = useState<{
+    session: TerminalSession;
+    provider: AiProvider;
+    action: AiTerminalAction;
+  } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [runMenuOpen, setRunMenuOpen] = useState(false);
@@ -685,6 +700,7 @@ export function RepositoryWorkspace({
 
   useEffect(() => {
     function focusSearch(event: KeyboardEvent) {
+      if (aiTerminal) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
         event.preventDefault();
         searchInputRef.current?.focus();
@@ -692,7 +708,7 @@ export function RepositoryWorkspace({
     }
     window.addEventListener("keydown", focusSearch);
     return () => window.removeEventListener("keydown", focusSearch);
-  }, []);
+  }, [aiTerminal]);
 
   useEffect(() => {
     setRunMenuOpen(false);
@@ -1094,18 +1110,28 @@ export function RepositoryWorkspace({
     const provider = aiStatus.provider;
     setCommitError(null);
     try {
-      await onStartAiTerminal(
+      const session = await onStartAiTerminal(
         selectedId,
         provider,
         action,
         aiStatus.providers[provider].executablePath,
       );
+      setAiTerminal({ session, provider, action });
     } catch (caught) {
       setCommitError(
         caught instanceof Error
           ? caught.message
           : `Could not open the ${provider === "codex" ? "Codex" : "Claude"} setup terminal.`,
       );
+    }
+  }
+
+  async function closeAiTerminal() {
+    setAiTerminal(null);
+    try {
+      setAiStatus(await api.aiStatus());
+    } catch {
+      // The commit flow remains usable even if provider detection fails.
     }
   }
 
@@ -1156,11 +1182,18 @@ export function RepositoryWorkspace({
         );
       }
     } catch (caught) {
-      setCommitError(
-        caught instanceof Error
-          ? caught.message
-          : "AI could not generate a commit message.",
+      const detail = readableError(
+        caught,
+        "AI could not generate a commit message.",
       );
+      setCommitError(detail);
+      if (/not signed in|complete sign-in/i.test(detail)) {
+        try {
+          setAiStatus(await api.aiStatus());
+        } catch {
+          // Keep the actionable generation error visible.
+        }
+      }
     } finally {
       setAiGenerating(false);
       setAiRequestId(null);
@@ -1797,6 +1830,7 @@ export function RepositoryWorkspace({
           preparing={commitPreparing}
           committing={committing}
           generating={aiGenerating}
+          suspended={Boolean(aiTerminal)}
           onMessageChange={setCommitMessage}
           onClose={closeCommitModal}
           onCommit={() => void submitCommit()}
@@ -1809,6 +1843,14 @@ export function RepositoryWorkspace({
           onInstallAi={() => void startAiTerminal("install")}
           onSignInAi={() => void startAiTerminal("login")}
           onLocateAi={() => void locateAiExecutable()}
+        />
+      )}
+      {aiTerminal && (
+        <AiTerminalModal
+          session={aiTerminal.session}
+          provider={aiTerminal.provider}
+          action={aiTerminal.action}
+          onClose={() => void closeAiTerminal()}
         />
       )}
     </main>

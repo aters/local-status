@@ -134,8 +134,8 @@ claude auth status
 
 If Claude is not installed, choose **Install Claude CLI** in the commit window.
 Local Status opens a managed terminal, runs Anthropic's native installer, and
-then launches Claude so you can finish sign-in. **Locate existing** remains
-available for installations in uncommon locations.
+then starts Claude's account sign-in flow. **Locate existing** remains available
+for installations in uncommon locations.
 
 ## License
 

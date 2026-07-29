@@ -30,6 +30,7 @@ interface CommitModalProps {
   preparing: boolean;
   committing: boolean;
   generating: boolean;
+  suspended?: boolean;
   onMessageChange: (message: string) => void;
   onClose: () => void;
   onCommit: () => void;
@@ -57,6 +58,7 @@ export function CommitModal({
   preparing,
   committing,
   generating,
+  suspended = false,
   onMessageChange,
   onClose,
   onCommit,
@@ -99,8 +101,8 @@ export function CommitModal({
   }, []);
 
   useEffect(() => {
-    if (!preparing) messageRef.current?.focus();
-  }, [preparing]);
+    if (!preparing && !suspended) messageRef.current?.focus();
+  }, [preparing, suspended]);
 
   useEffect(() => {
     if (!aiSettingsOpen) return;
@@ -118,6 +120,7 @@ export function CommitModal({
   }, [aiSettingsOpen]);
 
   useEffect(() => {
+    if (suspended) return;
     messageRef.current?.focus();
 
     function handleKeyboard(event: KeyboardEvent) {
@@ -157,10 +160,10 @@ export function CommitModal({
 
     document.addEventListener("keydown", handleKeyboard);
     return () => document.removeEventListener("keydown", handleKeyboard);
-  }, [aiSettingsOpen, canClose, canCommit]);
+  }, [aiSettingsOpen, canClose, canCommit, suspended]);
 
   function closeFromBackdrop(event: MouseEvent<HTMLDivElement>) {
-    if (event.target === event.currentTarget && canClose) onClose();
+    if (event.target === event.currentTarget && canClose && !suspended) onClose();
   }
 
   function submitFromTextarea(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
@@ -176,9 +179,10 @@ export function CommitModal({
     <div className="commit-modal-backdrop" onMouseDown={closeFromBackdrop}>
       <div
         ref={dialogRef}
-        className="commit-modal"
+        className={`commit-modal ${suspended ? "is-suspended" : ""}`}
         role="dialog"
-        aria-modal="true"
+        aria-modal={!suspended}
+        aria-hidden={suspended || undefined}
         aria-labelledby="commit-modal-title"
         aria-describedby="commit-modal-description"
       >

@@ -17,6 +17,24 @@ import type { Comparison } from "../types";
 
 type DiffEditorInstance = editor.IStandaloneDiffEditor;
 
+function revealChange(
+  instance: DiffEditorInstance,
+  change: editor.ILineChange,
+) {
+  const modifiedLine =
+    change.modifiedStartLineNumber ||
+    change.modifiedEndLineNumber ||
+    change.originalStartLineNumber ||
+    1;
+  const originalLine =
+    change.originalStartLineNumber ||
+    change.originalEndLineNumber ||
+    change.modifiedStartLineNumber ||
+    1;
+  instance.getModifiedEditor().revealLineInCenter(modifiedLine);
+  instance.getOriginalEditor().revealLineInCenter(originalLine);
+}
+
 function loadBoolean(key: string, fallback: boolean) {
   const value = window.localStorage.getItem(key);
   return value === null ? fallback : value === "true";
@@ -24,7 +42,17 @@ function loadBoolean(key: string, fallback: boolean) {
 
 export default function MonacoDiff({ comparison }: { comparison: Comparison }) {
   const editorRef = useRef<DiffEditorInstance | null>(null);
+  const diffUpdateSubscriptionRef = useRef<{ dispose(): void } | null>(null);
+  const autoRevealFrameRef = useRef<number | null>(null);
+  const revealedComparisonRef = useRef<string | null>(null);
   const changeIndex = useRef(-1);
+  const comparisonKey = [
+    comparison.repositoryId,
+    comparison.path,
+    comparison.original.source,
+    comparison.modified.source,
+  ].join(":");
+  const comparisonKeyRef = useRef(comparisonKey);
   const [sideBySide, setSideBySide] = useState(() =>
     loadBoolean("local-status:side-by-side", true),
   );
@@ -58,19 +86,50 @@ export default function MonacoDiff({ comparison }: { comparison: Comparison }) {
     changeIndex.current = -1;
   }, [comparison.path, comparison.original.content, comparison.modified.content]);
 
+  const revealFirstPendingChange = useCallback(() => {
+    const instance = editorRef.current;
+    const key = comparisonKeyRef.current;
+    if (!instance || revealedComparisonRef.current === key) return;
+    const firstChange = instance.getLineChanges()?.[0];
+    if (!firstChange) return;
+    revealChange(instance, firstChange);
+    changeIndex.current = 0;
+    revealedComparisonRef.current = key;
+  }, []);
+
+  useEffect(() => {
+    comparisonKeyRef.current = comparisonKey;
+    if (autoRevealFrameRef.current !== null) {
+      window.cancelAnimationFrame(autoRevealFrameRef.current);
+    }
+    autoRevealFrameRef.current = window.requestAnimationFrame(() => {
+      autoRevealFrameRef.current = null;
+      revealFirstPendingChange();
+    });
+    return () => {
+      if (autoRevealFrameRef.current !== null) {
+        window.cancelAnimationFrame(autoRevealFrameRef.current);
+        autoRevealFrameRef.current = null;
+      }
+    };
+  }, [comparisonKey, revealFirstPendingChange]);
+
+  useEffect(
+    () => () => {
+      diffUpdateSubscriptionRef.current?.dispose();
+      diffUpdateSubscriptionRef.current = null;
+      editorRef.current = null;
+    },
+    [],
+  );
+
   const goToChange = useCallback((direction: 1 | -1) => {
     const instance = editorRef.current;
     const changes = instance?.getLineChanges() ?? [];
     if (!changes.length || !instance) return;
     changeIndex.current =
       (changeIndex.current + direction + changes.length) % changes.length;
-    const change = changes[changeIndex.current];
-    const line =
-      change.modifiedStartLineNumber ||
-      change.originalStartLineNumber ||
-      1;
-    instance.getModifiedEditor().revealLineInCenter(line);
-    instance.getOriginalEditor().revealLineInCenter(change.originalStartLineNumber || 1);
+    revealChange(instance, changes[changeIndex.current]);
   }, []);
 
   useEffect(() => {
@@ -263,6 +322,11 @@ export default function MonacoDiff({ comparison }: { comparison: Comparison }) {
           }}
           onMount={(instance) => {
             editorRef.current = instance;
+            diffUpdateSubscriptionRef.current?.dispose();
+            diffUpdateSubscriptionRef.current = instance.onDidUpdateDiff(
+              revealFirstPendingChange,
+            );
+            revealFirstPendingChange();
           }}
           options={{
             readOnly: true,

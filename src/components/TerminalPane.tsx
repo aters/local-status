@@ -4,15 +4,35 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { Search, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { api } from "../api";
 import type { TerminalEvent, TerminalSession } from "../types";
 
-export function TerminalPane({ session }: { session: TerminalSession }) {
+export interface TerminalPaneHandle {
+  focus: () => void;
+}
+
+export const TerminalPane = forwardRef<
+  TerminalPaneHandle,
+  { session: TerminalSession; autoFocus?: boolean }
+>(function TerminalPane({ session, autoFocus = false }, ref) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const terminalRef = useRef<Terminal | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+
+  function focusTerminal() {
+    terminalRef.current?.focus();
+  }
+
+  useImperativeHandle(ref, () => ({ focus: focusTerminal }), []);
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -59,6 +79,7 @@ export function TerminalPane({ session }: { session: TerminalSession }) {
       }),
     );
     terminal.open(hostRef.current);
+    terminalRef.current = terminal;
     searchAddonRef.current = search;
     if (session.truncated) {
       terminal.writeln("\x1b[38;5;214m[Earlier terminal output was truncated]\x1b[0m");
@@ -66,6 +87,9 @@ export function TerminalPane({ session }: { session: TerminalSession }) {
     terminal.write(session.buffer);
     fit.fit();
     void api.resizeTerminal(session.id, terminal.cols, terminal.rows);
+    if (autoFocus) {
+      window.requestAnimationFrame(() => terminal.focus());
+    }
 
     const dataDisposable = terminal.onData((data) => {
       void api.writeTerminal(session.id, data);
@@ -87,9 +111,15 @@ export function TerminalPane({ session }: { session: TerminalSession }) {
       resizeObserver.disconnect();
       dataDisposable.dispose();
       terminal.dispose();
+      terminalRef.current = null;
       searchAddonRef.current = null;
     };
-  }, [session.id, session.buffer, session.truncated]);
+  }, [autoFocus, session.id, session.buffer, session.truncated]);
+
+  function closeSearch() {
+    setSearchOpen(false);
+    window.requestAnimationFrame(focusTerminal);
+  }
 
   return (
     <div className="terminal-pane">
@@ -112,12 +142,12 @@ export function TerminalPane({ session }: { session: TerminalSession }) {
                 if (event.key === "Enter" && query) {
                   searchAddonRef.current?.findNext(query);
                 }
-                if (event.key === "Escape") setSearchOpen(false);
+                if (event.key === "Escape") closeSearch();
               }}
               placeholder="Search output"
               aria-label="Search terminal output"
             />
-            <button type="button" onClick={() => setSearchOpen(false)} aria-label="Close search">
+            <button type="button" onClick={closeSearch} aria-label="Close search">
               <X size={14} />
             </button>
           </>
@@ -127,7 +157,11 @@ export function TerminalPane({ session }: { session: TerminalSession }) {
           </button>
         )}
       </div>
-      <div className="terminal-host" ref={hostRef} />
+      <div
+        className="terminal-host"
+        ref={hostRef}
+        onMouseDown={() => window.requestAnimationFrame(focusTerminal)}
+      />
     </div>
   );
-}
+});

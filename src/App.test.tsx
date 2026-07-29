@@ -17,7 +17,11 @@ vi.mock("./components/MonacoDiff", () => ({
 }));
 
 vi.mock("./components/TerminalPane", () => ({
-  TerminalPane: () => <div data-testid="terminal-pane">Terminal</div>,
+  TerminalPane: ({ autoFocus }: { autoFocus?: boolean }) => (
+    <div data-autofocus={String(Boolean(autoFocus))} data-testid="terminal-pane">
+      Terminal
+    </div>
+  ),
 }));
 
 const repositories = {
@@ -278,7 +282,19 @@ function createBridge(current = true) {
       resize: vi.fn(),
       stop: vi.fn(),
       restart: vi.fn(),
-      rename: vi.fn(),
+      rename: vi.fn(async (sessionId, title) => ({
+        id: sessionId,
+        repositoryId: "changed-web",
+        title,
+        kind: "shell" as const,
+        status: "running" as const,
+        startedAt: new Date().toISOString(),
+        endedAt: null,
+        exitCode: null,
+        signal: null,
+        truncated: false,
+        buffer: "",
+      })),
       close: vi.fn(),
       onEvent: vi.fn((callback) => terminalCallbacks.add(callback)),
       offEvent: vi.fn((callback) => terminalCallbacks.delete(callback)),
@@ -569,6 +585,8 @@ describe("Local Status", () => {
       within(dialog).getByRole("button", { name: "Locate existing" }),
     ).toBeVisible();
     expect(within(dialog).getByLabelText("Model")).toHaveValue("haiku");
+    const message = within(dialog).getByLabelText("Commit message");
+    await user.type(message, "Keep this draft in place");
 
     await user.click(
       within(dialog).getByRole("button", { name: "Install Claude CLI" }),
@@ -584,11 +602,40 @@ describe("Local Status", () => {
     );
     expect(window.localStatus.terminals.write).toHaveBeenCalledWith(
       "terminal-1",
-      'curl -fsSL https://claude.ai/install.sh | bash && "$HOME/.local/bin/claude"\r',
+      'curl -fsSL https://claude.ai/install.sh | bash && "$HOME/.local/bin/claude" auth login --claudeai\r',
     );
     expect(
-      await screen.findByRole("heading", { name: "Services & terminals" }),
+      await screen.findByRole("dialog", { name: "Install Claude CLI" }),
     ).toBeVisible();
+    expect(screen.getByTestId("terminal-pane")).toHaveAttribute(
+      "data-autofocus",
+      "true",
+    );
+    fireEvent.keyDown(screen.getByTestId("terminal-pane"), { key: "Escape" });
+    expect(
+      screen.getByRole("dialog", { name: "Install Claude CLI" }),
+    ).toBeVisible();
+    const setupClose = screen.getByRole("button", {
+      name: "Close setup terminal",
+    });
+    setupClose.focus();
+    fireEvent.keyDown(window, { key: "p", metaKey: true });
+    expect(setupClose).toHaveFocus();
+    expect(
+      screen.queryByRole("heading", { name: "Services & terminals" }),
+    ).not.toBeInTheDocument();
+    expect(dialog).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+
+    expect(
+      screen.queryByRole("dialog", { name: "Install Claude CLI" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(
+        screen.getByRole("dialog", { name: "Commit staged changes" }),
+      ).getByLabelText("Commit message"),
+    ).toHaveValue("Keep this draft in place");
   });
 
   it("closes the commit window with Escape and restores focus", async () => {

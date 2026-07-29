@@ -16,6 +16,7 @@ import type {
   AiTerminalAction,
   RepositoriesResponse,
   TerminalKind,
+  TerminalSession,
   WorkspaceState,
 } from "./types";
 
@@ -222,7 +223,7 @@ export function App() {
     provider: AiProvider,
     action: AiTerminalAction,
     executablePath: string | null,
-  ) {
+  ): Promise<TerminalSession> {
     const providerLabel = provider === "codex" ? "Codex" : "Claude";
     const title =
       action === "install"
@@ -232,7 +233,7 @@ export function App() {
       repositoryId,
       kind: "shell",
     });
-    await api.renameTerminal(session.id, title);
+    const namedSession = await api.renameTerminal(session.id, title);
 
     let command: string;
     if (action === "install") {
@@ -240,17 +241,18 @@ export function App() {
         throw new Error("Automatic installation is not available for this provider.");
       }
       command =
-        'curl -fsSL https://claude.ai/install.sh | bash && "$HOME/.local/bin/claude"';
+        'curl -fsSL https://claude.ai/install.sh | bash && "$HOME/.local/bin/claude" auth login --claudeai';
     } else {
       const executable = executablePath
         ? shellArgument(executablePath)
         : provider;
-      command = provider === "codex" ? `${executable} login` : executable;
+      command =
+        provider === "codex"
+          ? `${executable} login`
+          : `${executable} auth login --claudeai`;
     }
     await api.writeTerminal(session.id, `${command}\r`);
-    setActiveSessionId(session.id);
-    setView("services");
-    updateRoute({ view: "services", terminal: session.id }, "push");
+    return namedSession;
   }
 
   if (!workspace) {

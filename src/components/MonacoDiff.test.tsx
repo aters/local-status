@@ -1,11 +1,51 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Comparison } from "../types";
 import MonacoDiff from "./MonacoDiff";
 
+const editorMocks = vi.hoisted(() => {
+  const originalEditor = {
+    revealLineInCenter: vi.fn(),
+  };
+  const modifiedEditor = {
+    revealLineInCenter: vi.fn(),
+  };
+  const lineChanges = [
+    {
+      originalStartLineNumber: 42,
+      originalEndLineNumber: 44,
+      modifiedStartLineNumber: 38,
+      modifiedEndLineNumber: 40,
+    },
+    {
+      originalStartLineNumber: 88,
+      originalEndLineNumber: 89,
+      modifiedStartLineNumber: 82,
+      modifiedEndLineNumber: 83,
+    },
+  ];
+  const instance = {
+    getLineChanges: vi.fn(() => lineChanges),
+    getOriginalEditor: vi.fn(() => originalEditor),
+    getModifiedEditor: vi.fn(() => modifiedEditor),
+    onDidUpdateDiff: vi.fn((listener: () => void) => {
+      listener();
+      return { dispose: vi.fn() };
+    }),
+  };
+  return { instance, modifiedEditor, originalEditor };
+});
+
 vi.mock("@monaco-editor/react", () => ({
-  DiffEditor: () => <div data-testid="monaco-diff">Source comparison</div>,
+  DiffEditor: ({
+    onMount,
+  }: {
+    onMount?: (instance: typeof editorMocks.instance) => void;
+  }) => {
+    onMount?.(editorMocks.instance);
+    return <div data-testid="monaco-diff">Source comparison</div>;
+  },
 }));
 
 vi.mock("../monaco", () => ({}));
@@ -51,6 +91,7 @@ function comparison(overrides: Partial<Comparison> = {}): Comparison {
 }
 
 beforeEach(() => {
+  vi.clearAllMocks();
   window.localStorage.clear();
 });
 
@@ -59,6 +100,15 @@ afterEach(() => {
 });
 
 describe("Markdown preview", () => {
+  it("reveals the first change when a comparison opens", async () => {
+    render(<MonacoDiff comparison={comparison()} />);
+
+    await waitFor(() => {
+      expect(editorMocks.modifiedEditor.revealLineInCenter).toHaveBeenCalledWith(38);
+      expect(editorMocks.originalEditor.revealLineInCenter).toHaveBeenCalledWith(42);
+    });
+  });
+
   it("toggles between source and a safe rendered preview", async () => {
     const user = userEvent.setup();
     render(<MonacoDiff comparison={comparison()} />);

@@ -60,8 +60,10 @@ if (args[0] === "--version") {
   process.exit(0);
 }
 if (args[0] === "auth" && args[1] === "status") {
-  if (process.env.FAKE_CLAUDE_SIGNED_OUT === "1") process.exit(1);
-  console.log(JSON.stringify({ loggedIn: true }));
+  console.log(JSON.stringify({
+    loggedIn: process.env.FAKE_CLAUDE_SIGNED_OUT !== "1",
+    authMethod: process.env.FAKE_CLAUDE_SIGNED_OUT === "1" ? "none" : "claude.ai"
+  }));
   process.exit(0);
 }
 let prompt = "";
@@ -70,6 +72,10 @@ process.stdin.on("data", (chunk) => { prompt += chunk; });
 process.stdin.on("end", () => {
   if (process.env.FAKE_CLAUDE_PROMPT) fs.writeFileSync(process.env.FAKE_CLAUDE_PROMPT, prompt);
   if (process.env.FAKE_CLAUDE_ARGS) fs.writeFileSync(process.env.FAKE_CLAUDE_ARGS, JSON.stringify(args));
+  if (process.env.FAKE_CLAUDE_ERROR === "1") {
+    console.log(JSON.stringify({ is_error: true, result: "Not logged in · Please run /login" }));
+    process.exit(1);
+  }
   console.log(JSON.stringify({ structured_output: { message: "fix: draft with claude" } }));
 });
 `,
@@ -234,6 +240,58 @@ For more information, try '--help'.`, "Codex"),
     ).toBe("error: unexpected argument '--removed-flag' found");
   });
 
+  it("reads Claude authentication state from JSON even when the CLI exits successfully", async () => {
+    const signedOut = await createRunner({ FAKE_CLAUDE_SIGNED_OUT: "1" });
+
+    expect(await signedOut.runner.status()).toMatchObject({
+      providers: {
+        claude: {
+          available: true,
+          authenticated: false,
+          error: "Claude CLI is installed but not signed in.",
+        },
+      },
+    });
+  });
+
+  it("surfaces structured Claude failures written to stdout", async () => {
+    const { runner, settingsStore } = await createRunner({
+      FAKE_CLAUDE_ERROR: "1",
+    });
+    await settingsStore.setAiPreferences("claude", "haiku");
+    await settingsStore.acceptAiDisclosure("claude");
+
+    await expect(
+      runner.generate("request-claude-error", context),
+    ).rejects.toThrow(
+      "Claude CLI is not signed in. Complete sign-in and try again.",
+    );
+  });
+
+  it("normalizes Claude subject/body objects instead of exposing JSON as the commit message", () => {
+    const nested = JSON.stringify({
+      structured_output: {
+        message: JSON.stringify({
+          subject: "feat: add Claude setup",
+          body: "Open installation and sign-in inside a managed terminal.",
+        }),
+      },
+    });
+    const direct = JSON.stringify({
+      structured_output: {
+        subject: "fix: preserve terminal focus",
+        body: "Keep repository shortcuts from intercepting terminal input.",
+      },
+    });
+
+    expect(__testing.parseGeneratedMessage("claude", nested)).toBe(
+      "feat: add Claude setup\n\nOpen installation and sign-in inside a managed terminal.",
+    );
+    expect(__testing.parseGeneratedMessage("claude", direct)).toBe(
+      "fix: preserve terminal focus\n\nKeep repository shortcuts from intercepting terminal input.",
+    );
+  });
+
   it("uses provider-specific default model choices", () => {
     expect(__testing.DEFAULT_MODELS).toEqual({
       codex: "gpt-5.6-luna",
@@ -260,8 +318,11 @@ For more information, try '--help'.`, "Codex"),
       model: "haiku",
     });
     expect(readFileSync(promptPath, "utf8")).toContain("safe staged line");
+    expect(readFileSync(promptPath, "utf8")).toContain(
+      "Do not encode another JSON object",
+    );
     expect(JSON.parse(readFileSync(argsPath, "utf8"))).toEqual([
-      "--bare",
+      "--safe-mode",
       "--print",
       "--model",
       "haiku",
