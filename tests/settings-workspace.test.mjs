@@ -42,6 +42,10 @@ describe("SettingsStore", () => {
       args: ["-m", "http.server"],
       cwdRelative: ".",
     });
+    await store.setAiExecutable("codex", "/opt/homebrew/bin/codex");
+    await store.setAiExecutable("claude", "/usr/local/bin/claude");
+    await store.setAiPreferences("claude", "sonnet");
+    await store.acceptAiDisclosure("codex");
 
     const restored = new SettingsStore(settingsPath);
     await restored.load();
@@ -51,7 +55,81 @@ describe("SettingsStore", () => {
     expect(restored.profilesFor(workspace)).toEqual([
       expect.objectContaining({ name: "API", executable: "python3" }),
     ]);
+    expect(restored.aiSettings()).toEqual({
+      provider: "claude",
+      models: { codex: "gpt-5.6-luna", claude: "sonnet" },
+      executablePaths: {
+        codex: "/opt/homebrew/bin/codex",
+        claude: "/usr/local/bin/claude",
+      },
+      disclosureAccepted: { codex: true, claude: false },
+    });
     expect(JSON.stringify(restored.data)).not.toContain("env");
+  });
+
+  it("migrates version-one settings without losing workspace data", async () => {
+    const directory = temporaryDirectory("local-status-settings-migration-");
+    const settingsPath = join(directory, "settings.json");
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        version: 1,
+        lastWorkspacePath: "/tmp/legacy-workspace",
+        recentWorkspaces: ["/tmp/legacy-workspace"],
+        profiles: {
+          "/tmp/legacy-workspace": [
+            {
+              id: "profile-00000000000000000001",
+              repositoryId: "web",
+              name: "Web",
+              executable: "npm",
+              args: ["run", "dev"],
+              cwdRelative: ".",
+            },
+          ],
+        },
+      }),
+    );
+    const store = new SettingsStore(settingsPath);
+
+    await store.load();
+
+    expect(store.data.version).toBe(3);
+    expect(store.data.lastWorkspacePath).toBe("/tmp/legacy-workspace");
+    expect(store.profilesFor("/tmp/legacy-workspace")).toHaveLength(1);
+    expect(store.aiSettings()).toEqual({
+      provider: "codex",
+      models: { codex: "gpt-5.6-luna", claude: "haiku" },
+      executablePaths: { codex: null, claude: null },
+      disclosureAccepted: { codex: false, claude: false },
+    });
+  });
+
+  it("migrates version-two Codex preferences into provider-neutral AI settings", async () => {
+    const directory = temporaryDirectory("local-status-settings-ai-migration-");
+    const settingsPath = join(directory, "settings.json");
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        version: 2,
+        lastWorkspacePath: null,
+        recentWorkspaces: [],
+        profiles: {},
+        codex: {
+          executablePath: "/opt/homebrew/bin/codex",
+          disclosureAccepted: true,
+        },
+      }),
+    );
+    const store = new SettingsStore(settingsPath);
+
+    await store.load();
+
+    expect(store.aiSettings()).toMatchObject({
+      provider: "codex",
+      executablePaths: { codex: "/opt/homebrew/bin/codex" },
+      disclosureAccepted: { codex: true, claude: false },
+    });
   });
 
   it("backs up corrupt settings and recovers with defaults", async () => {

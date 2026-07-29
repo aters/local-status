@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 
-const SETTINGS_VERSION = 1;
+const SETTINGS_VERSION = 3;
 const MAX_RECENT_WORKSPACES = 8;
 
 function defaults() {
@@ -10,6 +10,21 @@ function defaults() {
     lastWorkspacePath: null,
     recentWorkspaces: [],
     profiles: {},
+    ai: {
+      provider: "codex",
+      models: {
+        codex: "gpt-5.6-luna",
+        claude: "haiku",
+      },
+      executablePaths: {
+        codex: null,
+        claude: null,
+      },
+      disclosureAccepted: {
+        codex: false,
+        claude: false,
+      },
+    },
   };
 }
 
@@ -31,7 +46,11 @@ function validProfile(value) {
 }
 
 function parseSettings(value) {
-  if (!value || typeof value !== "object" || value.version !== SETTINGS_VERSION) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    ![1, 2, SETTINGS_VERSION].includes(value.version)
+  ) {
     return defaults();
   }
   const profiles = {};
@@ -48,6 +67,37 @@ function parseSettings(value) {
       ? value.recentWorkspaces.slice(0, MAX_RECENT_WORKSPACES)
       : [],
     profiles,
+    ai: {
+      provider: value.ai?.provider === "claude" ? "claude" : "codex",
+      models: {
+        codex:
+          typeof value.ai?.models?.codex === "string"
+            ? value.ai.models.codex
+            : "gpt-5.6-luna",
+        claude:
+          typeof value.ai?.models?.claude === "string"
+            ? value.ai.models.claude
+            : "haiku",
+      },
+      executablePaths: {
+        codex:
+          typeof value.ai?.executablePaths?.codex === "string"
+            ? value.ai.executablePaths.codex
+            : typeof value.codex?.executablePath === "string"
+              ? value.codex.executablePath
+              : null,
+        claude:
+          typeof value.ai?.executablePaths?.claude === "string"
+            ? value.ai.executablePaths.claude
+            : null,
+      },
+      disclosureAccepted: {
+        codex:
+          value.ai?.disclosureAccepted?.codex === true ||
+          value.codex?.disclosureAccepted === true,
+        claude: value.ai?.disclosureAccepted?.claude === true,
+      },
+    },
   };
 }
 
@@ -113,6 +163,34 @@ export class SettingsStore {
       .filter((entry) => entry.id !== profileId);
     await this.save();
     return this.profilesFor(workspacePath);
+  }
+
+  aiSettings() {
+    return {
+      ...this.data.ai,
+      models: { ...this.data.ai.models },
+      executablePaths: { ...this.data.ai.executablePaths },
+      disclosureAccepted: { ...this.data.ai.disclosureAccepted },
+    };
+  }
+
+  async setAiExecutable(provider, executablePath) {
+    this.data.ai.executablePaths[provider] = executablePath;
+    await this.save();
+    return this.aiSettings();
+  }
+
+  async setAiPreferences(provider, model) {
+    this.data.ai.provider = provider;
+    this.data.ai.models[provider] = model;
+    await this.save();
+    return this.aiSettings();
+  }
+
+  async acceptAiDisclosure(provider) {
+    this.data.ai.disclosureAccepted[provider] = true;
+    await this.save();
+    return this.aiSettings();
   }
 
   recentWorkspaceSummaries() {

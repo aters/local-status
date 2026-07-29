@@ -1,5 +1,14 @@
-import { execFile } from "node:child_process";
-import { lstat, readFile, readdir, readlink, realpath, stat } from "node:fs/promises";
+import { execFile, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import {
+  lstat,
+  readFile,
+  readdir,
+  readlink,
+  realpath,
+  stat,
+  unlink,
+} from "node:fs/promises";
 import {
   basename,
   extname,
@@ -14,7 +23,11 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 10_000;
 const FETCH_TIMEOUT_MS = 60_000;
+const SYNC_TIMEOUT_MS = 120_000;
+const COMMIT_TIMEOUT_MS = 120_000;
 const MAX_GIT_OUTPUT = 12 * 1024 * 1024;
+const MAX_COMMIT_DIFF_BYTES = 1_000_000;
+const PATH_CHUNK_SIZE = 200;
 export const MAX_PREVIEW_BYTES = 1_000_000;
 
 const fetchTimes = new Map();
@@ -43,12 +56,106 @@ async function execGit(repository, args, options = {}) {
       timeout: options.timeout ?? GIT_TIMEOUT_MS,
       maxBuffer: options.maxBuffer ?? MAX_GIT_OUTPUT,
       windowsHide: true,
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: "0",
+        ...(options.env ?? {}),
+      },
     });
     return result.stdout;
   } catch (error) {
     if (options.allowFailure) return null;
     throw new GitServiceError(cleanGitError(error));
   }
+}
+
+function appendLimited(current, chunk, limit) {
+  if (current.length >= limit) return { value: current, truncated: true };
+  const remaining = limit - current.length;
+  if (chunk.length <= remaining) {
+    return { value: Buffer.concat([current, chunk]), truncated: false };
+  }
+  return {
+    value: Buffer.concat([current, chunk.subarray(0, remaining)]),
+    truncated: true,
+  };
+}
+
+async function spawnGit(repository, args, options = {}) {
+  const stdoutLimit = options.stdoutLimit ?? MAX_GIT_OUTPUT;
+  const stderrLimit = options.stderrLimit ?? 64 * 1024;
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn("git", ["-C", repository, ...args], {
+      windowsHide: true,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: "0",
+        ...(options.env ?? {}),
+      },
+    });
+    let stdout = Buffer.alloc(0);
+    let stderr = Buffer.alloc(0);
+    let stdoutTruncated = false;
+    let stderrTruncated = false;
+    let timedOut = false;
+    let settled = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, options.timeout ?? GIT_TIMEOUT_MS);
+
+    child.stdout.on("data", (chunk) => {
+      const next = appendLimited(stdout, Buffer.from(chunk), stdoutLimit);
+      stdout = next.value;
+      stdoutTruncated ||= next.truncated;
+    });
+    child.stderr.on("data", (chunk) => {
+      const next = appendLimited(stderr, Buffer.from(chunk), stderrLimit);
+      stderr = next.value;
+      stderrTruncated ||= next.truncated;
+    });
+    child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      rejectPromise(new GitServiceError(cleanGitError(error)));
+    });
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      const stdoutText = stdout.toString("utf8");
+      const stderrText = stderr.toString("utf8");
+      if (timedOut) {
+        rejectPromise(
+          new GitServiceError(
+            "Git did not finish before the operation timed out.",
+            408,
+            "GIT_TIMEOUT",
+          ),
+        );
+        return;
+      }
+      if (code !== 0) {
+        rejectPromise(
+          new GitServiceError(
+            cleanGitError({ stderr: stderrText || stdoutText }),
+          ),
+        );
+        return;
+      }
+      resolvePromise({
+        stdout: stdoutText,
+        stderr: stderrText,
+        stdoutTruncated,
+        stderrTruncated,
+      });
+    });
+
+    child.stdin.on("error", () => undefined);
+    child.stdin.end(options.input ?? "");
+  });
 }
 
 function workspaceRoot() {
@@ -378,6 +485,305 @@ export async function repositoryChanges(repositoryId) {
   };
 }
 
+const actionableScopes = new Set([
+  "conflict",
+  "staged",
+  "working",
+  "untracked",
+  "unstaged",
+]);
+
+function selectedChanges(repositoryPath, changes, selection, allowedScopes) {
+  const scope = selection?.scope;
+  if (!actionableScopes.has(scope) || !allowedScopes.has(scope)) {
+    throw new GitServiceError("This change action is not available.", 400, "INVALID_CHANGE_ACTION");
+  }
+  const scoped =
+    scope === "unstaged"
+      ? changes.filter(
+          (change) => change.scope === "working" || change.scope === "untracked",
+        )
+      : changes.filter((change) => change.scope === scope);
+  if (selection.path === undefined || selection.path === null) return scoped;
+  const { normalizedPath } = safeRepoPath(repositoryPath, selection.path);
+  const match = scoped.find((change) => change.path === normalizedPath);
+  if (!match) {
+    throw new GitServiceError(
+      "This file has changed since the view was refreshed.",
+      409,
+      "STALE_CHANGE",
+    );
+  }
+  return [match];
+}
+
+function pathsForChanges(changes) {
+  return [
+    ...new Set(
+      changes.flatMap((change) =>
+        change.previousPath ? [change.path, change.previousPath] : [change.path],
+      ),
+    ),
+  ];
+}
+
+async function execGitPathChunks(repositoryPath, prefix, paths) {
+  for (let index = 0; index < paths.length; index += PATH_CHUNK_SIZE) {
+    await execGit(repositoryPath, [
+      ...prefix,
+      "--",
+      ...paths.slice(index, index + PATH_CHUNK_SIZE),
+    ]);
+  }
+}
+
+async function currentChanges(repository) {
+  const output = await execGit(repository.path, [
+    "status",
+    "--porcelain=v2",
+    "-z",
+    "--branch",
+    "--untracked-files=all",
+  ]);
+  return parsePorcelainV2(output).changes;
+}
+
+function commitSnapshotId(rawIndex) {
+  return createHash("sha256").update(rawIndex).digest("hex");
+}
+
+function stagedFiles(changes) {
+  return changes
+    .filter((change) => change.scope === "staged")
+    .map(({ path, previousPath, kind, status }) => ({
+      path,
+      previousPath,
+      kind,
+      status,
+    }));
+}
+
+async function currentCommitContext(repository) {
+  const changes = await currentChanges(repository);
+  if (changes.some((change) => change.scope === "conflict")) {
+    throw new GitServiceError(
+      "Resolve all conflicts before committing.",
+      409,
+      "UNRESOLVED_CONFLICTS",
+    );
+  }
+  const files = stagedFiles(changes);
+  if (!files.length) {
+    throw new GitServiceError(
+      "Stage at least one change before committing.",
+      409,
+      "NOTHING_STAGED",
+    );
+  }
+  const rawIndex = await execGit(repository.path, [
+    "diff",
+    "--cached",
+    "--raw",
+    "-z",
+    "--no-ext-diff",
+  ]);
+  const status = await repositoryStatus(repository);
+  return {
+    repositoryId: repository.id,
+    snapshotId: commitSnapshotId(rawIndex),
+    branch: status.branch,
+    detached: status.detached,
+    unborn: status.unborn,
+    stagedFiles: files,
+  };
+}
+
+function assertCommitSnapshot(context, expectedSnapshotId) {
+  if (
+    typeof expectedSnapshotId !== "string" ||
+    expectedSnapshotId.length !== 64 ||
+    expectedSnapshotId !== context.snapshotId
+  ) {
+    throw new GitServiceError(
+      "The staged changes changed while the commit window was open. Review them and try again.",
+      409,
+      "STAGED_CHANGES_CHANGED",
+    );
+  }
+}
+
+export async function prepareCommit(repositoryId) {
+  return currentCommitContext(await getRepository(repositoryId));
+}
+
+export async function commitMessageContext(repositoryId, expectedSnapshotId) {
+  const repository = await getRepository(repositoryId);
+  const context = await currentCommitContext(repository);
+  assertCommitSnapshot(context, expectedSnapshotId);
+  const [statistics, recentSubjects, patch] = await Promise.all([
+    execGit(
+      repository.path,
+      ["diff", "--cached", "--stat", "--no-ext-diff", "--no-color"],
+      { allowFailure: true },
+    ),
+    execGit(
+      repository.path,
+      ["log", "--max-count=10", "--format=%s"],
+      { allowFailure: true },
+    ),
+    spawnGit(
+      repository.path,
+      ["diff", "--cached", "--no-ext-diff", "--no-color", "--unified=3"],
+      { stdoutLimit: MAX_COMMIT_DIFF_BYTES },
+    ),
+  ]);
+  return {
+    ...context,
+    statistics: statistics?.trim() ?? "",
+    recentSubjects: (recentSubjects ?? "")
+      .split("\n")
+      .map((subject) => subject.trim())
+      .filter(Boolean),
+    patch: patch.stdout,
+    patchTruncated: patch.stdoutTruncated,
+  };
+}
+
+export async function createCommit(repositoryId, input) {
+  const repository = await getRepository(repositoryId);
+  const message =
+    typeof input?.message === "string" ? input.message.trim() : "";
+  if (!message || message.length > 20_000 || message.includes("\0")) {
+    throw new GitServiceError(
+      "Enter a commit message between 1 and 20,000 characters.",
+      400,
+      "INVALID_COMMIT_MESSAGE",
+    );
+  }
+  const context = await currentCommitContext(repository);
+  assertCommitSnapshot(context, input?.snapshotId);
+  await spawnGit(
+    repository.path,
+    ["commit", "--cleanup=strip", "--file=-"],
+    {
+      input: `${message}\n`,
+      timeout: COMMIT_TIMEOUT_MS,
+      env: { GIT_EDITOR: "true" },
+    },
+  );
+  const commit = await latestCommit(repository.path);
+  if (!commit) {
+    throw new GitServiceError(
+      "Git created the commit but its details could not be read.",
+    );
+  }
+  return {
+    repositoryId,
+    commit,
+    changes: (await repositoryChanges(repositoryId)).changes,
+  };
+}
+
+export async function stageChanges(repositoryId, selection) {
+  const repository = await getRepository(repositoryId);
+  const changes = selectedChanges(
+    repository.path,
+    await currentChanges(repository),
+    selection,
+    new Set(["conflict", "working", "untracked", "unstaged"]),
+  );
+  if (changes.length) {
+    await execGitPathChunks(repository.path, ["add", "-A"], pathsForChanges(changes));
+  }
+  return repositoryChanges(repositoryId);
+}
+
+export async function unstageChanges(repositoryId, selection) {
+  const repository = await getRepository(repositoryId);
+  const changes = selectedChanges(
+    repository.path,
+    await currentChanges(repository),
+    selection,
+    new Set(["staged"]),
+  );
+  const paths = pathsForChanges(changes);
+  if (!paths.length) return repositoryChanges(repositoryId);
+
+  const hasHead = Boolean(
+    await execGit(repository.path, ["rev-parse", "--verify", "HEAD"], {
+      allowFailure: true,
+    }),
+  );
+  await execGitPathChunks(
+    repository.path,
+    hasHead
+      ? ["reset", "--quiet", "HEAD"]
+      : ["rm", "--cached", "-r", "--ignore-unmatch"],
+    paths,
+  );
+  return repositoryChanges(repositoryId);
+}
+
+async function removeUntrackedFile(repositoryPath, filePath) {
+  const { absolutePath } = safeRepoPath(repositoryPath, filePath);
+  let details;
+  try {
+    details = await lstat(absolutePath);
+  } catch (error) {
+    if (error?.code === "ENOENT") return;
+    throw error;
+  }
+  if (details.isDirectory() && !details.isSymbolicLink()) {
+    throw new GitServiceError(
+      "Local Status will not recursively remove an untracked directory.",
+      409,
+      "UNTRACKED_DIRECTORY",
+    );
+  }
+  await unlink(absolutePath);
+}
+
+async function revertWorkingChange(repositoryPath, change) {
+  if (!change.previousPath) {
+    await execGitPathChunks(repositoryPath, ["restore", "--worktree"], [change.path]);
+    return;
+  }
+
+  await execGitPathChunks(
+    repositoryPath,
+    ["restore", "--worktree"],
+    [change.previousPath],
+  );
+  const destinationIsTracked = Boolean(
+    await execGit(repositoryPath, ["ls-files", "--error-unmatch", "--", change.path], {
+      allowFailure: true,
+    }),
+  );
+  if (destinationIsTracked) {
+    await execGitPathChunks(repositoryPath, ["restore", "--worktree"], [change.path]);
+  } else {
+    await removeUntrackedFile(repositoryPath, change.path);
+  }
+}
+
+export async function revertChanges(repositoryId, selection) {
+  const repository = await getRepository(repositoryId);
+  const changes = selectedChanges(
+    repository.path,
+    await currentChanges(repository),
+    selection,
+    new Set(["working", "untracked", "unstaged"]),
+  );
+  for (const change of changes) {
+    if (change.scope === "untracked") {
+      await removeUntrackedFile(repository.path, change.path);
+    } else {
+      await revertWorkingChange(repository.path, change);
+    }
+  }
+  return repositoryChanges(repositoryId);
+}
+
 function parseCommits(output) {
   return output
     .split("\x1e")
@@ -670,6 +1076,62 @@ async function fetchRepository(repository) {
 
 export async function fetchOne(repositoryId) {
   return fetchRepository(await getRepository(repositoryId));
+}
+
+export async function syncRepository(repositoryId) {
+  const repository = await getRepository(repositoryId);
+  const before = await repositoryStatus(repository);
+  if (!before.upstream || !before.branch || before.detached || before.unborn) {
+    throw new GitServiceError(
+      "Configure an upstream branch before syncing this repository.",
+      409,
+      "NO_UPSTREAM",
+    );
+  }
+
+  const remote = (
+    await execGit(
+      repository.path,
+      ["config", "--get", `branch.${before.branch}.remote`],
+      { allowFailure: true },
+    )
+  )?.trim();
+  const mergeRef = (
+    await execGit(
+      repository.path,
+      ["config", "--get", `branch.${before.branch}.merge`],
+      { allowFailure: true },
+    )
+  )?.trim();
+  if (!remote || remote === "." || !mergeRef?.startsWith("refs/heads/")) {
+    throw new GitServiceError(
+      "The configured upstream cannot be synchronized.",
+      409,
+      "INVALID_UPSTREAM",
+    );
+  }
+
+  await execGit(
+    repository.path,
+    ["pull", "--no-rebase", "--ff-only", "--no-edit"],
+    { timeout: SYNC_TIMEOUT_MS },
+  );
+  fetchTimes.set(repository.id, new Date().toISOString());
+  await execGit(
+    repository.path,
+    ["push", remote, `HEAD:${mergeRef}`],
+    { timeout: SYNC_TIMEOUT_MS },
+  );
+  const after = await repositoryStatus(repository);
+  return {
+    repositoryId,
+    upstream: before.upstream,
+    pulled: before.incoming,
+    pushed: before.outgoing,
+    incoming: after.incoming,
+    outgoing: after.outgoing,
+    syncedAt: new Date().toISOString(),
+  };
 }
 
 async function mapWithConcurrency(items, concurrency, callback) {

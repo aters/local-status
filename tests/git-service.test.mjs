@@ -1,8 +1,12 @@
 // @vitest-environment node
 import { execFileSync } from "node:child_process";
 import {
+  chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -13,14 +17,21 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   GitServiceError,
+  commitMessageContext,
   comparisonContents,
+  createCommit,
   fetchOne,
   listRepositorySummaries,
   parsePorcelainV2,
+  prepareCommit,
   repositoryChanges,
   repositoryCommits,
   repositoryFiles,
+  revertChanges,
   setWorkspaceRoot,
+  stageChanges,
+  syncRepository,
+  unstageChanges,
 } from "../server/git-service.mjs";
 
 const temporaryDirectories = [];
@@ -92,6 +103,307 @@ describe("parsePorcelainV2", () => {
 });
 
 describe("local Git integration", () => {
+  it("stages, unstages, and safely reverts individual and grouped changes", async () => {
+    const workspace = temporaryDirectory("local-status-actions-");
+    const repository = join(workspace, "working-copy");
+    execFileSync("git", ["init", "-b", "main", repository], { stdio: "ignore" });
+    configureUser(repository);
+    writeFileSync(join(repository, "tracked.txt"), "committed\n");
+    writeFileSync(join(repository, "old-name.txt"), "rename me\n");
+    git(repository, "add", ".");
+    git(repository, "commit", "-m", "Initial commit");
+
+    writeFileSync(join(repository, "tracked.txt"), "working edit\n");
+    writeFileSync(join(repository, "new file.md"), "# untracked\n");
+    setWorkspaceRoot(workspace);
+
+    await stageChanges("working-copy", { scope: "working", path: "tracked.txt" });
+    expect((await repositoryChanges("working-copy")).changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "tracked.txt", scope: "staged" }),
+      ]),
+    );
+
+    await unstageChanges("working-copy", { scope: "staged", path: "tracked.txt" });
+    expect((await repositoryChanges("working-copy")).changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "tracked.txt", scope: "working" }),
+      ]),
+    );
+
+    await stageChanges("working-copy", { scope: "untracked" });
+    expect((await repositoryChanges("working-copy")).changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "new file.md", scope: "staged" }),
+      ]),
+    );
+    await unstageChanges("working-copy", {
+      scope: "staged",
+      path: "new file.md",
+    });
+
+    await stageChanges("working-copy", { scope: "unstaged" });
+    expect((await repositoryChanges("working-copy")).changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "tracked.txt", scope: "staged" }),
+        expect.objectContaining({ path: "new file.md", scope: "staged" }),
+      ]),
+    );
+    await unstageChanges("working-copy", { scope: "staged" });
+
+    await revertChanges("working-copy", { scope: "unstaged" });
+    expect(readFileSync(join(repository, "tracked.txt"), "utf8")).toBe("committed\n");
+    expect(existsSync(join(repository, "new file.md"))).toBe(false);
+
+    renameSync(join(repository, "old-name.txt"), join(repository, "new-name.txt"));
+    expect((await repositoryChanges("working-copy")).changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "old-name.txt", scope: "working" }),
+        expect.objectContaining({ path: "new-name.txt", scope: "untracked" }),
+      ]),
+    );
+    await revertChanges("working-copy", { scope: "working" });
+    await revertChanges("working-copy", { scope: "untracked" });
+    expect(existsSync(join(repository, "old-name.txt"))).toBe(true);
+    expect(existsSync(join(repository, "new-name.txt"))).toBe(false);
+
+    await expect(
+      stageChanges("working-copy", {
+        scope: "untracked",
+        path: "../../outside.txt",
+      }),
+    ).rejects.toBeInstanceOf(GitServiceError);
+  });
+
+  it("commits only the staged snapshot and rejects a stale commit window", async () => {
+    const workspace = temporaryDirectory("local-status-commit-");
+    const repository = join(workspace, "commit-repo");
+    execFileSync("git", ["init", "-b", "main", repository], { stdio: "ignore" });
+    configureUser(repository);
+    writeFileSync(join(repository, "tracked.txt"), "base\n");
+    writeFileSync(join(repository, "other.txt"), "base\n");
+    git(repository, "add", ".");
+    git(repository, "commit", "-m", "Initial commit");
+
+    writeFileSync(join(repository, "tracked.txt"), "staged version\n");
+    git(repository, "add", "tracked.txt");
+    writeFileSync(join(repository, "tracked.txt"), "working version\n");
+    writeFileSync(join(repository, "untracked.txt"), "leave me alone\n");
+    setWorkspaceRoot(workspace);
+
+    const prepared = await prepareCommit("commit-repo");
+    expect(prepared).toMatchObject({
+      repositoryId: "commit-repo",
+      branch: "main",
+      detached: false,
+      stagedFiles: [expect.objectContaining({ path: "tracked.txt" })],
+    });
+    const generationContext = await commitMessageContext(
+      "commit-repo",
+      prepared.snapshotId,
+    );
+    expect(generationContext.patch).toContain("staged version");
+    expect(generationContext.patch).not.toContain("working version");
+    expect(generationContext.recentSubjects).toContain("Initial commit");
+
+    const result = await createCommit("commit-repo", {
+      message: "Update tracked behavior\n\nExplain the staged change ✓",
+      snapshotId: prepared.snapshotId,
+    });
+    expect(result.commit.subject).toBe("Update tracked behavior");
+    expect(git(repository, "show", "HEAD:tracked.txt")).toBe("staged version");
+    expect(readFileSync(join(repository, "tracked.txt"), "utf8")).toBe(
+      "working version\n",
+    );
+    expect(readFileSync(join(repository, "untracked.txt"), "utf8")).toBe(
+      "leave me alone\n",
+    );
+    expect(git(repository, "log", "-1", "--format=%B")).toContain(
+      "Explain the staged change ✓",
+    );
+
+    writeFileSync(join(repository, "other.txt"), "first staged edit\n");
+    git(repository, "add", "other.txt");
+    const stale = await prepareCommit("commit-repo");
+    writeFileSync(join(repository, "tracked.txt"), "second staged edit\n");
+    git(repository, "add", "tracked.txt");
+    await expect(
+      createCommit("commit-repo", {
+        message: "This must not commit",
+        snapshotId: stale.snapshotId,
+      }),
+    ).rejects.toMatchObject({ code: "STAGED_CHANGES_CHANGED" });
+  });
+
+  it("supports initial and detached commits and rejects empty commit attempts", async () => {
+    const workspace = temporaryDirectory("local-status-commit-edge-");
+    const initial = join(workspace, "initial");
+    execFileSync("git", ["init", "-b", "main", initial], { stdio: "ignore" });
+    configureUser(initial);
+    setWorkspaceRoot(workspace);
+
+    await expect(prepareCommit("initial")).rejects.toMatchObject({
+      code: "NOTHING_STAGED",
+    });
+    writeFileSync(join(initial, "README.md"), "# Initial\n");
+    git(initial, "add", "README.md");
+    const first = await prepareCommit("initial");
+    expect(first.unborn).toBe(true);
+    await createCommit("initial", {
+      message: "Create initial snapshot",
+      snapshotId: first.snapshotId,
+    });
+
+    git(initial, "checkout", "--detach");
+    writeFileSync(join(initial, "README.md"), "# Detached\n");
+    git(initial, "add", "README.md");
+    const detached = await prepareCommit("initial");
+    expect(detached.detached).toBe(true);
+    await createCommit("initial", {
+      message: "Update detached snapshot",
+      snapshotId: detached.snapshotId,
+    });
+    expect(git(initial, "log", "-1", "--format=%s")).toBe(
+      "Update detached snapshot",
+    );
+  });
+
+  it("surfaces identity, hook, and unresolved-conflict failures", async () => {
+    const workspace = temporaryDirectory("local-status-commit-failures-");
+    const identity = join(workspace, "identity");
+    execFileSync("git", ["init", "-b", "main", identity], { stdio: "ignore" });
+    git(identity, "config", "user.useConfigOnly", "true");
+    git(identity, "config", "user.name", "");
+    git(identity, "config", "user.email", "");
+    writeFileSync(join(identity, "identity.txt"), "identity\n");
+    git(identity, "add", "identity.txt");
+    setWorkspaceRoot(workspace);
+    const identityContext = await prepareCommit("identity");
+    await expect(
+      createCommit("identity", {
+        message: "Missing identity",
+        snapshotId: identityContext.snapshotId,
+      }),
+    ).rejects.toThrow(/identity/i);
+
+    configureUser(identity);
+    const hookPath = join(identity, ".git", "hooks", "pre-commit");
+    writeFileSync(hookPath, "#!/bin/sh\necho 'Blocked by test hook' >&2\nexit 1\n");
+    chmodSync(hookPath, 0o755);
+    const hookContext = await prepareCommit("identity");
+    await expect(
+      createCommit("identity", {
+        message: "Blocked commit",
+        snapshotId: hookContext.snapshotId,
+      }),
+    ).rejects.toThrow("Blocked by test hook");
+
+    const conflict = join(workspace, "conflict");
+    execFileSync("git", ["init", "-b", "main", conflict], { stdio: "ignore" });
+    configureUser(conflict);
+    writeFileSync(join(conflict, "shared.txt"), "base\n");
+    git(conflict, "add", "shared.txt");
+    git(conflict, "commit", "-m", "Base");
+    git(conflict, "checkout", "-b", "other");
+    writeFileSync(join(conflict, "shared.txt"), "other\n");
+    git(conflict, "commit", "-am", "Other");
+    git(conflict, "checkout", "main");
+    writeFileSync(join(conflict, "shared.txt"), "main\n");
+    git(conflict, "commit", "-am", "Main");
+    expect(() => git(conflict, "merge", "other")).toThrow();
+    setWorkspaceRoot(workspace);
+    await expect(prepareCommit("conflict")).rejects.toMatchObject({
+      code: "UNRESOLVED_CONFLICTS",
+    });
+  });
+
+  it("syncs a configured upstream with fast-forward-only pull followed by push", async () => {
+    const workspace = temporaryDirectory("local-status-sync-workspace-");
+    const remote = temporaryDirectory("local-status-sync-remote-");
+    const producer = temporaryDirectory("local-status-sync-producer-");
+    const repository = join(workspace, "sync-repo");
+
+    execFileSync("git", ["init", "--bare", remote], { stdio: "ignore" });
+    execFileSync("git", ["init", "-b", "main", repository], { stdio: "ignore" });
+    configureUser(repository);
+    writeFileSync(join(repository, "base.txt"), "base\n");
+    git(repository, "add", "base.txt");
+    git(repository, "commit", "-m", "Base");
+    git(repository, "remote", "add", "origin", remote);
+    git(repository, "push", "-u", "origin", "main");
+    git(remote, "symbolic-ref", "HEAD", "refs/heads/main");
+
+    execFileSync("git", ["clone", remote, producer], { stdio: "ignore" });
+    configureUser(producer);
+    writeFileSync(join(producer, "incoming.txt"), "from remote\n");
+    git(producer, "add", "incoming.txt");
+    git(producer, "commit", "-m", "Incoming");
+    git(producer, "push", "origin", "main");
+
+    setWorkspaceRoot(workspace);
+    await fetchOne("sync-repo");
+    const pulled = await syncRepository("sync-repo");
+    expect(pulled).toMatchObject({
+      repositoryId: "sync-repo",
+      pulled: 1,
+      pushed: 0,
+      incoming: 0,
+      outgoing: 0,
+    });
+    expect(readFileSync(join(repository, "incoming.txt"), "utf8")).toBe(
+      "from remote\n",
+    );
+
+    writeFileSync(join(repository, "outgoing.txt"), "from local\n");
+    git(repository, "add", "outgoing.txt");
+    git(repository, "commit", "-m", "Outgoing");
+    const pushed = await syncRepository("sync-repo");
+    expect(pushed).toMatchObject({ pulled: 0, pushed: 1, incoming: 0, outgoing: 0 });
+    git(producer, "pull", "--ff-only");
+    expect(readFileSync(join(producer, "outgoing.txt"), "utf8")).toBe("from local\n");
+  });
+
+  it("refuses sync without an upstream and refuses divergent implicit merges", async () => {
+    const workspace = temporaryDirectory("local-status-sync-safety-");
+    const remote = temporaryDirectory("local-status-sync-safety-remote-");
+    const producer = temporaryDirectory("local-status-sync-safety-producer-");
+    const noUpstream = join(workspace, "no-upstream");
+    const repository = join(workspace, "diverged");
+
+    execFileSync("git", ["init", "-b", "main", noUpstream], { stdio: "ignore" });
+    configureUser(noUpstream);
+    writeFileSync(join(noUpstream, "local.txt"), "local\n");
+    git(noUpstream, "add", "local.txt");
+    git(noUpstream, "commit", "-m", "Local only");
+
+    execFileSync("git", ["init", "--bare", remote], { stdio: "ignore" });
+    execFileSync("git", ["init", "-b", "main", repository], { stdio: "ignore" });
+    configureUser(repository);
+    writeFileSync(join(repository, "base.txt"), "base\n");
+    git(repository, "add", "base.txt");
+    git(repository, "commit", "-m", "Base");
+    git(repository, "remote", "add", "origin", remote);
+    git(repository, "push", "-u", "origin", "main");
+    git(remote, "symbolic-ref", "HEAD", "refs/heads/main");
+    execFileSync("git", ["clone", remote, producer], { stdio: "ignore" });
+    configureUser(producer);
+
+    writeFileSync(join(repository, "local-change.txt"), "local\n");
+    git(repository, "add", "local-change.txt");
+    git(repository, "commit", "-m", "Local change");
+    writeFileSync(join(producer, "remote-change.txt"), "remote\n");
+    git(producer, "add", "remote-change.txt");
+    git(producer, "commit", "-m", "Remote change");
+    git(producer, "push", "origin", "main");
+
+    setWorkspaceRoot(workspace);
+    await expect(syncRepository("no-upstream")).rejects.toMatchObject({
+      code: "NO_UPSTREAM",
+    });
+    await expect(syncRepository("diverged")).rejects.toBeInstanceOf(GitServiceError);
+    expect(git(remote, "log", "--format=%s", "-1", "main")).toBe("Remote change");
+  });
+
   it("discovers direct repositories and reports changes, comparisons, files, fetch, and divergence", async () => {
     const workspace = temporaryDirectory("local-status-workspace-");
     const remote = temporaryDirectory("local-status-remote-");

@@ -24,7 +24,42 @@ export const api = {
   ) => bridge().repositories.comparison(repositoryId, options),
   fetch: (repositoryId: string) => bridge().repositories.fetch(repositoryId),
   fetchAll: () => bridge().repositories.fetchAll(),
+  prepareCommit: (repositoryId: string) =>
+    bridge().repositories.prepareCommit(repositoryId),
+  createCommit: (
+    repositoryId: string,
+    input: Parameters<LocalStatusBridge["repositories"]["createCommit"]>[1],
+  ) => bridge().repositories.createCommit(repositoryId, input),
+  stage: (
+    repositoryId: string,
+    selection: Parameters<LocalStatusBridge["repositories"]["stage"]>[1],
+  ) => bridge().repositories.stage(repositoryId, selection),
+  unstage: (
+    repositoryId: string,
+    selection: Parameters<LocalStatusBridge["repositories"]["unstage"]>[1],
+  ) => bridge().repositories.unstage(repositoryId, selection),
+  revert: (
+    repositoryId: string,
+    selection: Parameters<LocalStatusBridge["repositories"]["revert"]>[1],
+  ) => bridge().repositories.revert(repositoryId, selection),
+  sync: (repositoryId: string) => bridge().repositories.sync(repositoryId),
   scripts: (repositoryId: string) => bridge().repositories.scripts(repositoryId),
+  aiStatus: () => bridge().ai.status(),
+  setAiPreferences: (
+    provider: Parameters<LocalStatusBridge["ai"]["setPreferences"]>[0],
+    model: string,
+  ) => bridge().ai.setPreferences(provider, model),
+  chooseAiExecutable: (
+    provider: Parameters<LocalStatusBridge["ai"]["chooseExecutable"]>[0],
+  ) => bridge().ai.chooseExecutable(provider),
+  acceptAiDisclosure: (
+    provider: Parameters<LocalStatusBridge["ai"]["acceptDisclosure"]>[0],
+  ) => bridge().ai.acceptDisclosure(provider),
+  generateCommitMessage: (
+    input: Parameters<LocalStatusBridge["ai"]["generateCommitMessage"]>[0],
+  ) => bridge().ai.generateCommitMessage(input),
+  cancelCommitMessageGeneration: (requestId: string) =>
+    bridge().ai.cancelGeneration(requestId),
   profiles: () => bridge().profiles.list(),
   saveProfile: (profile: Parameters<LocalStatusBridge["profiles"]["save"]>[0]) =>
     bridge().profiles.save(profile),

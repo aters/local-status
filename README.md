@@ -11,13 +11,17 @@ in one folder.
 
 - Direct-child repository discovery
 - Working changes, commits, file trees, and incoming/outgoing status
-- Side-by-side and inline Monaco diffs
-- Fetch and Fetch all
+- Side-by-side and inline Monaco diffs with rendered Markdown previews
+- Stage, unstage, commit, revert, fetch, and fast-forward-only sync
+- Optional commit-message drafts from an installed Codex or Claude CLI
 - Interactive terminals and detected package scripts
 - Saved custom service profiles
 
 Repository data, terminal output, paths, and settings stay on your machine.
-There are no accounts, telemetry, or hosted services.
+There is no Local Status account, telemetry, or hosted service. If you
+explicitly generate a commit message, the staged diff, file names, statistics,
+and recent commit subjects are processed through the selected CLI account after
+a provider-specific first-use confirmation.
 
 ## Requirements
 
@@ -48,22 +52,37 @@ The workspace folder itself does not need to be a repository.
 ## Usage
 
 Select a repository to browse its Changes, Commits, or Files. Selecting a
-changed file opens a Monaco comparison.
+changed file opens a Monaco comparison. Change groups and files expose Stage,
+Unstage, and Revert actions. Revert requires confirmation; reverting an
+untracked file permanently deletes it.
+
+Commit opens a review window and commits staged changes only. Write the message
+yourself or generate an editable draft with Codex CLI or Claude CLI. Choose the
+provider and model in the commit window. Local Status does not read or store CLI
+credentials.
+
+Generated-message input is capped at a 1 MB patch. If the patch is larger, the
+model still receives the complete staged file list, status and statistics, plus
+recent commit subjects. Local Status marks the draft as truncated so you can
+review it more carefully.
+
+Sync pulls the configured upstream with `--ff-only`, then pushes local commits.
+It stops instead of creating an implicit merge when branches have diverged.
 
 Use **New terminal** to open a shell in a repository. **Run script** lists
 scripts detected from `package.json`. The Services screen keeps running
 sessions available while you move between repositories.
 
-The Git interface is read-only except for Fetch. It does not expose stage,
-discard, commit, checkout, merge, pull, rebase, push, or similar actions.
-Terminals are unrestricted local shells, so only run commands from repositories
-you trust.
+The repository interface does not expose checkout, merge, rebase, or automatic
+push controls. Terminals are unrestricted local shells, so only run commands
+from repositories you trust.
 
 ### Keyboard shortcuts
 
 | Shortcut | Action |
 | --- | --- |
 | `Cmd+P` | Focus repository search |
+| `Cmd+Enter` | Commit from the commit window |
 | `Enter` | Open the selected repository or file |
 | `F7` | Next diff change |
 | `Shift+F7` | Previous diff change |
@@ -100,6 +119,21 @@ npm run postinstall
 
 Local Status scans only immediate child folders. Nested repositories and the
 selected workspace root are intentionally excluded.
+
+### AI message generation is unavailable
+
+Install and sign in to the selected CLI, then reopen the commit window:
+
+```bash
+codex login
+codex login status
+
+claude auth login
+claude auth status
+```
+
+If Local Status still cannot find it, use **Locate Codex CLI** or **Locate
+Claude CLI** in the commit window.
 
 ## License
 

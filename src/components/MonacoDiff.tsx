@@ -2,12 +2,16 @@ import { DiffEditor } from "@monaco-editor/react";
 import {
   ArrowDown,
   ArrowUp,
+  Code2,
   Columns2,
+  Eye,
   Rows3,
   WrapText,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { editor } from "monaco-editor";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import "../monaco";
 import type { Comparison } from "../types";
 
@@ -28,6 +32,9 @@ export default function MonacoDiff({ comparison }: { comparison: Comparison }) {
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(() =>
     loadBoolean("local-status:ignore-whitespace", false),
   );
+  const [markdownPreview, setMarkdownPreview] = useState(() =>
+    loadBoolean("local-status:markdown-preview", false),
+  );
 
   useEffect(() => {
     window.localStorage.setItem("local-status:side-by-side", String(sideBySide));
@@ -41,6 +48,12 @@ export default function MonacoDiff({ comparison }: { comparison: Comparison }) {
       String(ignoreWhitespace),
     );
   }, [ignoreWhitespace]);
+  useEffect(() => {
+    window.localStorage.setItem(
+      "local-status:markdown-preview",
+      String(markdownPreview),
+    );
+  }, [markdownPreview]);
   useEffect(() => {
     changeIndex.current = -1;
   }, [comparison.path, comparison.original.content, comparison.modified.content]);
@@ -71,6 +84,14 @@ export default function MonacoDiff({ comparison }: { comparison: Comparison }) {
   }, [goToChange]);
 
   const unavailable = comparison.original.binary || comparison.modified.binary;
+  const isMarkdown =
+    comparison.language === "markdown" ||
+    /\.(?:md|markdown|mdown|mkd)$/i.test(comparison.path);
+  const showMarkdownPreview = isMarkdown && !unavailable && markdownPreview;
+  const previewSide =
+    comparison.modified.missing && !comparison.original.missing
+      ? comparison.original
+      : comparison.modified;
 
   return (
     <div className="diff-shell">
@@ -81,54 +102,87 @@ export default function MonacoDiff({ comparison }: { comparison: Comparison }) {
           <span>{comparison.modified.label}</span>
         </div>
         <div className="diff-actions">
-          <button
-            className="toolbar-button"
-            type="button"
-            onClick={() => goToChange(-1)}
-            title="Previous change"
-          >
-            <ArrowUp size={15} />
-            <span className="button-label">Previous</span>
-          </button>
-          <button
-            className="toolbar-button"
-            type="button"
-            onClick={() => goToChange(1)}
-            title="Next change"
-          >
-            <ArrowDown size={15} />
-            <span className="button-label">Next</span>
-          </button>
-          <span className="toolbar-divider" />
-          <button
-            className={`toolbar-button ${wrap ? "is-active" : ""}`}
-            type="button"
-            aria-pressed={wrap}
-            onClick={() => setWrap((current) => !current)}
-            title="Toggle line wrapping"
-          >
-            <WrapText size={15} />
-            <span className="button-label">Wrap</span>
-          </button>
-          <button
-            className={`toolbar-button ${ignoreWhitespace ? "is-active" : ""}`}
-            type="button"
-            aria-pressed={ignoreWhitespace}
-            onClick={() => setIgnoreWhitespace((current) => !current)}
-            title="Ignore leading and trailing whitespace"
-          >
-            <span className="whitespace-icon">¶</span>
-            <span className="button-label">Whitespace</span>
-          </button>
-          <button
-            className="toolbar-button view-toggle"
-            type="button"
-            onClick={() => setSideBySide((current) => !current)}
-            title={sideBySide ? "Switch to inline diff" : "Switch to side-by-side diff"}
-          >
-            {sideBySide ? <Rows3 size={15} /> : <Columns2 size={15} />}
-            <span className="button-label">{sideBySide ? "Inline" : "Side by side"}</span>
-          </button>
+          {!showMarkdownPreview && (
+            <>
+              <button
+                className="toolbar-button"
+                type="button"
+                onClick={() => goToChange(-1)}
+                title="Previous change"
+              >
+                <ArrowUp size={15} />
+                <span className="button-label">Previous</span>
+              </button>
+              <button
+                className="toolbar-button"
+                type="button"
+                onClick={() => goToChange(1)}
+                title="Next change"
+              >
+                <ArrowDown size={15} />
+                <span className="button-label">Next</span>
+              </button>
+              <span className="toolbar-divider" />
+              <button
+                className={`toolbar-button ${wrap ? "is-active" : ""}`}
+                type="button"
+                aria-pressed={wrap}
+                onClick={() => setWrap((current) => !current)}
+                title="Toggle line wrapping"
+              >
+                <WrapText size={15} />
+                <span className="button-label">Wrap</span>
+              </button>
+              <button
+                className={`toolbar-button ${ignoreWhitespace ? "is-active" : ""}`}
+                type="button"
+                aria-pressed={ignoreWhitespace}
+                onClick={() => setIgnoreWhitespace((current) => !current)}
+                title="Ignore leading and trailing whitespace"
+              >
+                <span className="whitespace-icon">¶</span>
+                <span className="button-label">Whitespace</span>
+              </button>
+              <button
+                className="toolbar-button view-toggle"
+                type="button"
+                onClick={() => setSideBySide((current) => !current)}
+                title={
+                  sideBySide
+                    ? "Switch to inline diff"
+                    : "Switch to side-by-side diff"
+                }
+              >
+                {sideBySide ? <Rows3 size={15} /> : <Columns2 size={15} />}
+                <span className="button-label">
+                  {sideBySide ? "Inline" : "Side by side"}
+                </span>
+              </button>
+            </>
+          )}
+          {isMarkdown && !unavailable && (
+            <>
+              {!showMarkdownPreview && <span className="toolbar-divider" />}
+              <button
+                className={`toolbar-button markdown-view-toggle ${
+                  showMarkdownPreview ? "is-active" : ""
+                }`}
+                type="button"
+                aria-pressed={showMarkdownPreview}
+                onClick={() => setMarkdownPreview((current) => !current)}
+                title={
+                  showMarkdownPreview
+                    ? "Show Markdown source comparison"
+                    : "Preview rendered Markdown"
+                }
+              >
+                {showMarkdownPreview ? <Code2 size={15} /> : <Eye size={15} />}
+                <span className="button-label">
+                  {showMarkdownPreview ? "Source" : "Preview"}
+                </span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -142,6 +196,39 @@ export default function MonacoDiff({ comparison }: { comparison: Comparison }) {
           <span className="empty-orbit">01</span>
           <h3>Binary comparison unavailable</h3>
           <p>This file is tracked, but its contents cannot be shown as text.</p>
+        </div>
+      ) : showMarkdownPreview ? (
+        <div className="markdown-preview-shell">
+          <div className="markdown-preview-version">
+            Previewing {previewSide.label}
+          </div>
+          {previewSide.content.trim() ? (
+            <article className="markdown-preview">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                skipHtml
+                components={{
+                  a: ({ children, href }) => (
+                    <span className="markdown-preview__link" title={href}>
+                      {children}
+                    </span>
+                  ),
+                  img: ({ alt }) => (
+                    <span className="markdown-preview__image" role="img">
+                      Image{alt ? `: ${alt}` : ""}
+                    </span>
+                  ),
+                }}
+              >
+                {previewSide.content}
+              </ReactMarkdown>
+            </article>
+          ) : (
+            <div className="viewer-empty">
+              <h3>Empty Markdown file</h3>
+              <p>There is no content to preview in this version.</p>
+            </div>
+          )}
         </div>
       ) : (
         <DiffEditor

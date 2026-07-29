@@ -19,10 +19,13 @@ import {
   GitCompareArrows,
   History,
   Menu,
+  Minus,
+  Plus,
   RefreshCw,
   Search,
   SquareTerminal,
   Play,
+  Undo2,
   X,
 } from "lucide-react";
 import {
@@ -39,9 +42,15 @@ import {
 import { api } from "../api";
 import { routeParams, updateRoute } from "../route";
 import type {
+  ChangeAction,
+  ChangeActionScope,
   ChangeItem,
+  ChangeSelection,
   ChangeScope,
+  AiProvider,
+  AiStatus,
   Commit,
+  CommitContext,
   CommitScope,
   Comparison,
   FileChange,
@@ -51,11 +60,17 @@ import type {
   RepositoryScript,
   TerminalKind,
 } from "../types";
+import { CommitModal } from "./CommitModal";
 import { FileTree } from "./FileTree";
+import { RepositoryMark } from "./RepositoryMark";
+import { repositoryHealth } from "../repository-mark";
 
 const MonacoDiff = lazy(() => import("./MonacoDiff"));
+const TOAST_DURATION_MS = 4_000;
 
 type RepoFilter = "all" | "changed" | "incoming" | "outgoing" | "errors";
+type WorkingChangeScope = Exclude<ChangeScope, "commit">;
+type ChangeGroupKey = "conflict" | "staged" | "unstaged";
 
 interface CompareRequest {
   path: string;
@@ -127,14 +142,33 @@ function repositoryPassesFilter(repository: RepositorySummary, filter: RepoFilte
 }
 
 const scopeGroups: Array<{
-  scope: ChangeScope;
+  key: ChangeGroupKey;
+  scopes: WorkingChangeScope[];
+  actionScope: ChangeActionScope;
   label: string;
   description: string;
 }> = [
-  { scope: "conflict", label: "Conflicts", description: "Needs attention" },
-  { scope: "staged", label: "Staged changes", description: "Index" },
-  { scope: "working", label: "Working tree", description: "Not staged" },
-  { scope: "untracked", label: "Untracked", description: "New files" },
+  {
+    key: "conflict",
+    scopes: ["conflict"],
+    actionScope: "conflict",
+    label: "Conflicts",
+    description: "Needs attention",
+  },
+  {
+    key: "staged",
+    scopes: ["staged"],
+    actionScope: "staged",
+    label: "Staged",
+    description: "Ready to commit",
+  },
+  {
+    key: "unstaged",
+    scopes: ["working", "untracked"],
+    actionScope: "unstaged",
+    label: "Unstaged",
+    description: "Not staged",
+  },
 ];
 
 const kindLabel = {
@@ -268,7 +302,7 @@ function RepositoryNavigator({
             type="button"
             role="option"
             aria-selected={repository.id === selectedId}
-            className={`repository-row ${
+            className={`repository-row repository-row--${repositoryHealth(repository)} ${
               repository.id === selectedId ? "is-selected" : ""
             }`}
             key={repository.id}
@@ -277,17 +311,7 @@ function RepositoryNavigator({
               onCloseMobile();
             }}
           >
-            <span
-              className={`repo-health-dot ${
-                repository.error
-                  ? "has-error"
-                  : repository.summary.conflicts
-                    ? "has-conflict"
-                    : repository.summary.files
-                      ? "has-changes"
-                      : "is-clean"
-              }`}
-            />
+            <RepositoryMark repository={repository} />
             <span className="repository-row__content">
               <span className="repository-row__name">{repository.id}</span>
               <span className="repository-row__branch">
@@ -336,13 +360,22 @@ function ChangeList({
   changes,
   selected,
   search,
+  busy,
+  disabled,
   onSelect,
+  onAction,
 }: {
   changes: ChangeItem[];
   selected: CompareRequest | null;
   search: string;
+  busy: string | null;
+  disabled: boolean;
   onSelect: (change: ChangeItem) => void;
+  onAction: (action: ChangeAction, selection: ChangeSelection) => void;
 }) {
+  const [collapsed, setCollapsed] = useState<Set<ChangeGroupKey>>(
+    () => new Set(),
+  );
   const filtered = changes.filter((change) =>
     change.path.toLowerCase().includes(search.toLowerCase()),
   );
@@ -359,48 +392,121 @@ function ChangeList({
       </div>
     );
   }
+
+  function actionButton(
+    action: ChangeAction,
+    scope: ChangeActionScope,
+    path?: string,
+  ) {
+    const key = `${action}:${scope}:${path ?? "*"}`;
+    const label = path
+      ? `${action === "stage" ? "Stage" : action === "unstage" ? "Unstage" : "Revert"} ${path}`
+      : `${action === "stage" ? "Stage" : action === "unstage" ? "Unstage" : "Revert"} all ${scope} changes`;
+    const Icon = action === "stage" ? Plus : action === "unstage" ? Minus : Undo2;
+    return (
+      <button
+        type="button"
+        className={`change-action ${action === "revert" ? "is-destructive" : ""}`}
+        title={label}
+        aria-label={label}
+        disabled={Boolean(busy) || disabled}
+        onClick={() => onAction(action, { scope, path })}
+      >
+        {busy === key ? <RefreshCw className="is-spinning" size={12} /> : <Icon size={13} />}
+      </button>
+    );
+  }
+
+  function actionsFor(scope: WorkingChangeScope, path?: string) {
+    return (
+      <span className="change-actions">
+        {(scope === "working" || scope === "untracked") &&
+          actionButton("revert", scope, path)}
+        {scope === "staged"
+          ? actionButton("unstage", scope, path)
+          : actionButton("stage", scope, path)}
+      </span>
+    );
+  }
+
+  function actionsForGroup(group: (typeof scopeGroups)[number]) {
+    return (
+      <span className="change-actions">
+        {group.key === "unstaged" && actionButton("revert", group.actionScope)}
+        {group.key === "staged"
+          ? actionButton("unstage", group.actionScope)
+          : actionButton("stage", group.actionScope)}
+      </span>
+    );
+  }
+
   return (
     <div className="change-groups">
       {scopeGroups.map((group) => {
-        const items = filtered.filter((change) => change.scope === group.scope);
+        const items = filtered.filter((change) =>
+          group.scopes.includes(change.scope as WorkingChangeScope),
+        );
         if (!items.length) return null;
+        const isCollapsed = collapsed.has(group.key);
         return (
-          <details className="change-group" open key={group.scope}>
-            <summary>
-              <ChevronDown size={13} />
-              <span>{group.label}</span>
-              <small>{group.description}</small>
-              <strong>{items.length}</strong>
-            </summary>
-            <div>
-              {items.map((change) => (
-                <button
-                  type="button"
+          <section className="change-group" key={group.key}>
+            <div className="change-group__header">
+              <button
+                type="button"
+                className="change-group__toggle"
+                aria-expanded={!isCollapsed}
+                onClick={() =>
+                  setCollapsed((current) => {
+                    const next = new Set(current);
+                    if (next.has(group.key)) next.delete(group.key);
+                    else next.add(group.key);
+                    return next;
+                  })
+                }
+              >
+                <ChevronDown className={isCollapsed ? "is-collapsed" : ""} size={13} />
+                <span>{group.label}</span>
+                <small>{group.description}</small>
+                <strong>{items.length}</strong>
+              </button>
+              {actionsForGroup(group)}
+            </div>
+            {!isCollapsed && (
+              <div className="change-group__items">
+                {items.map((change) => (
+                  <div
                   className={`change-row ${
                     selected?.path === change.path && selected.scope === change.scope
                       ? "is-selected"
                       : ""
                   }`}
                   key={change.id}
-                  onClick={() => onSelect(change)}
-                  title={change.path}
                 >
-                  <span className={`change-kind change-kind--${change.kind}`}>
-                    {kindLabel[change.kind]}
-                  </span>
-                  <span className="change-path">
-                    <strong>{pathName(change.path)}</strong>
-                    <small>
-                      {change.previousPath
-                        ? `${change.previousPath} → ${pathDirectory(change.path)}`
-                        : pathDirectory(change.path) || "repository root"}
-                    </small>
-                  </span>
-                  <ChevronRight size={13} />
-                </button>
+                    <button
+                      type="button"
+                      className="change-row__select"
+                      onClick={() => onSelect(change)}
+                      title={change.path}
+                    >
+                      <span className={`change-kind change-kind--${change.kind}`}>
+                        {kindLabel[change.kind]}
+                      </span>
+                      <span className="change-path">
+                        <strong>{pathName(change.path)}</strong>
+                        <small>
+                          {change.previousPath
+                            ? `${change.previousPath} → ${pathDirectory(change.path)}`
+                            : pathDirectory(change.path) || "repository root"}
+                        </small>
+                      </span>
+                      <ChevronRight size={13} />
+                    </button>
+                    {actionsFor(change.scope as WorkingChangeScope, change.path)}
+                  </div>
               ))}
-            </div>
-          </details>
+              </div>
+            )}
+          </section>
         );
       })}
     </div>
@@ -496,6 +602,17 @@ export function RepositoryWorkspace({
     files: FileChange[];
   } | null>(null);
   const [fetching, setFetching] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState<string | null>(null);
+  const [changeBusy, setChangeBusy] = useState<string | null>(null);
+  const [commitModalOpen, setCommitModalOpen] = useState(false);
+  const [commitContext, setCommitContext] = useState<CommitContext | null>(null);
+  const [commitMessage, setCommitMessage] = useState("");
+  const [commitError, setCommitError] = useState<string | null>(null);
+  const [commitPreparing, setCommitPreparing] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiRequestId, setAiRequestId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [runMenuOpen, setRunMenuOpen] = useState(false);
@@ -549,6 +666,14 @@ export function RepositoryWorkspace({
     }
     updateRoute(updates);
   }, [compareRequest, selectedCommit, selectedId, tab]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timeout = window.setTimeout(() => {
+      setToast((current) => (current === toast ? null : current));
+    }, TOAST_DURATION_MS);
+    return () => window.clearTimeout(timeout);
+  }, [toast]);
 
   useEffect(() => {
     function focusSearch(event: KeyboardEvent) {
@@ -813,6 +938,259 @@ export function RepositoryWorkspace({
     }
   }
 
+  async function performChangeAction(
+    action: ChangeAction,
+    selection: ChangeSelection,
+  ) {
+    if (!selectedId) return;
+    const key = `${action}:${selection.scope}:${selection.path ?? "*"}`;
+    setChangeBusy(key);
+    setToast(null);
+    try {
+      const result =
+        action === "stage"
+          ? await api.stage(selectedId, selection)
+          : action === "unstage"
+            ? await api.unstage(selectedId, selection)
+            : await api.revert(selectedId, selection);
+      if (result.cancelled) return;
+      setChanges(result.changes);
+      if (
+        compareRequest &&
+        (compareRequest.scope === selection.scope ||
+          (selection.scope === "unstaged" &&
+            (compareRequest.scope === "working" ||
+              compareRequest.scope === "untracked"))) &&
+        (!selection.path || compareRequest.path === selection.path)
+      ) {
+        const next = result.changes.find(
+          (change) => change.path === compareRequest.path,
+        );
+        setCompareRequest(
+          next
+            ? {
+                path: next.path,
+                previousPath: next.previousPath,
+                scope: next.scope,
+              }
+            : null,
+        );
+      }
+      const target = selection.path
+        ? pathName(selection.path)
+        : selection.scope === "unstaged"
+          ? "all unstaged changes"
+          : `${selection.scope} changes`;
+      setToast(
+        action === "stage"
+          ? `Staged ${target}.`
+          : action === "unstage"
+            ? `Unstaged ${target}.`
+            : `Reverted ${target}.`,
+      );
+      await onRefresh();
+    } catch (caught) {
+      setToast(
+        caught instanceof Error ? caught.message : `Could not ${action} the changes.`,
+      );
+      await onRefresh();
+    } finally {
+      setChangeBusy(null);
+    }
+  }
+
+  async function syncSelectedRepository(repositoryId: string) {
+    setSyncing(repositoryId);
+    setToast(null);
+    try {
+      const result = await api.sync(repositoryId);
+      const activity = [
+        result.pulled ? `pulled ${result.pulled}` : null,
+        result.pushed ? `pushed ${result.pushed}` : null,
+      ].filter(Boolean);
+      setToast(
+        activity.length
+          ? `Synced ${repositoryId}: ${activity.join(", ")}.`
+          : `${repositoryId} is already synchronized.`,
+      );
+    } catch (caught) {
+      setToast(caught instanceof Error ? caught.message : "Sync failed.");
+    } finally {
+      await onRefresh();
+      setSyncing(null);
+    }
+  }
+
+  async function refreshCommitContext(repositoryId: string) {
+    setCommitPreparing(true);
+    try {
+      const context = await api.prepareCommit(repositoryId);
+      setCommitContext(context);
+      return context;
+    } finally {
+      setCommitPreparing(false);
+    }
+  }
+
+  async function openCommitModal() {
+    if (!selectedId) return;
+    setCommitModalOpen(true);
+    setCommitContext(null);
+    setCommitMessage("");
+    setCommitError(null);
+    setAiStatus(null);
+    setCommitPreparing(true);
+    try {
+      const [context, status] = await Promise.all([
+        api.prepareCommit(selectedId),
+        api.aiStatus(),
+      ]);
+      setCommitContext(context);
+      setAiStatus(status);
+    } catch (caught) {
+      setCommitError(
+        caught instanceof Error
+          ? caught.message
+          : "The commit window could not be prepared.",
+      );
+      try {
+        setAiStatus(await api.aiStatus());
+      } catch {
+        setAiStatus(null);
+      }
+    } finally {
+      setCommitPreparing(false);
+    }
+  }
+
+  function closeCommitModal() {
+    if (committing || aiGenerating) return;
+    setCommitModalOpen(false);
+    setCommitError(null);
+  }
+
+  async function locateAiExecutable() {
+    if (!aiStatus) return;
+    setCommitError(null);
+    try {
+      setAiStatus(await api.chooseAiExecutable(aiStatus.provider));
+    } catch (caught) {
+      setCommitError(
+        caught instanceof Error ? caught.message : "The AI CLI could not be selected.",
+      );
+    }
+  }
+
+  async function changeAiPreferences(provider: AiProvider, model?: string) {
+    if (!aiStatus) return;
+    setCommitError(null);
+    const nextModel =
+      model ??
+      aiStatus.selectedModels[provider];
+    try {
+      setAiStatus(await api.setAiPreferences(provider, nextModel));
+    } catch (caught) {
+      setCommitError(
+        caught instanceof Error
+          ? caught.message
+          : "The AI preference could not be saved.",
+      );
+    }
+  }
+
+  async function generateCommitMessage() {
+    if (!selectedId || !commitContext || !aiStatus) return;
+    const providerStatus = aiStatus.providers[aiStatus.provider];
+    if (!providerStatus.authenticated) return;
+    setCommitError(null);
+    try {
+      if (!aiStatus.disclosureAccepted) {
+        const accepted = await api.acceptAiDisclosure(aiStatus.provider);
+        if (!accepted) return;
+        setAiStatus((current) =>
+          current ? { ...current, disclosureAccepted: true } : current,
+        );
+      }
+      const requestId =
+        globalThis.crypto?.randomUUID?.() ??
+        `commit-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      setAiRequestId(requestId);
+      setAiGenerating(true);
+      const result = await api.generateCommitMessage({
+        repositoryId: selectedId,
+        snapshotId: commitContext.snapshotId,
+        requestId,
+      });
+      setCommitMessage(result.message);
+      if (result.patchTruncated) {
+        setCommitError(
+          `${result.provider === "codex" ? "Codex" : "Claude"} drafted this message from a patch capped at 1 MB. All staged file names and statistics were included; review the draft carefully.`,
+        );
+      }
+    } catch (caught) {
+      setCommitError(
+        caught instanceof Error
+          ? caught.message
+          : "AI could not generate a commit message.",
+      );
+    } finally {
+      setAiGenerating(false);
+      setAiRequestId(null);
+    }
+  }
+
+  async function cancelCommitMessageGeneration() {
+    if (!aiRequestId) return;
+    try {
+      await api.cancelCommitMessageGeneration(aiRequestId);
+    } catch {
+      setCommitError("The AI generation could not be cancelled.");
+    }
+  }
+
+  async function submitCommit() {
+    if (!selectedId || !commitContext || !commitMessage.trim()) return;
+    setCommitting(true);
+    setCommitError(null);
+    try {
+      const result = await api.createCommit(selectedId, {
+        message: commitMessage,
+        snapshotId: commitContext.snapshotId,
+      });
+      setChanges(result.changes);
+      if (
+        compareRequest &&
+        !result.changes.some(
+          (change) =>
+            change.path === compareRequest.path &&
+            change.scope === compareRequest.scope,
+        )
+      ) {
+        setCompareRequest(null);
+      }
+      setCommitModalOpen(false);
+      setToast(
+        `Committed ${result.commit.shortSha}: ${result.commit.subject}`,
+      );
+      await onRefresh();
+    } catch (caught) {
+      const message =
+        caught instanceof Error ? caught.message : "Git could not create the commit.";
+      setCommitError(message);
+      if (message.includes("staged changes changed")) {
+        try {
+          await refreshCommitContext(selectedId);
+        } catch (refreshError) {
+          setCommitError(
+            refreshError instanceof Error ? refreshError.message : message,
+          );
+        }
+      }
+    } finally {
+      setCommitting(false);
+    }
+  }
+
   function resizeRepo(delta: number) {
     const next = Math.max(220, Math.min(390, resizeStart.current.repo + delta));
     setRepoWidth(next);
@@ -852,6 +1230,13 @@ export function RepositoryWorkspace({
   const filteredFiles = files.filter((path) =>
     path.toLowerCase().includes(contextSearch.toLowerCase()),
   );
+  const stagedCount = changes.filter((change) => change.scope === "staged").length;
+  const hasConflicts = changes.some((change) => change.scope === "conflict");
+  const commitDisabledReason = hasConflicts
+    ? "Resolve conflicts before committing"
+    : stagedCount === 0
+      ? "Stage changes before committing"
+      : "Commit staged changes";
 
   const workspaceStyle = {
     "--repo-panel-width": `${repoWidth}px`,
@@ -912,7 +1297,7 @@ export function RepositoryWorkspace({
             className="primary-button"
             type="button"
             onClick={() => void fetchEveryRepository()}
-            disabled={Boolean(fetching)}
+            disabled={Boolean(fetching || syncing || changeBusy)}
           >
             <CloudDownload className={fetching === "all" ? "is-spinning" : ""} size={15} />
             {fetching === "all" ? "Fetching…" : "Fetch all"}
@@ -948,13 +1333,7 @@ export function RepositoryWorkspace({
             <>
               <div className="repository-header">
                 <div className="repository-header__top">
-                  <span className="repo-avatar">
-                    {selectedRepository.id
-                      .split("-")
-                      .slice(0, 2)
-                      .map((part) => part[0]?.toUpperCase())
-                      .join("") || "R"}
-                  </span>
+                  <RepositoryMark repository={selectedRepository} size="header" />
                   <div>
                     <h2>{selectedRepository.id}</h2>
                     <span>
@@ -995,7 +1374,7 @@ export function RepositoryWorkspace({
                       type="button"
                       title="Fetch this repository"
                       aria-label="Fetch this repository"
-                      disabled={Boolean(fetching)}
+                      disabled={Boolean(fetching || syncing || changeBusy)}
                       onClick={() => void fetchRepository(selectedRepository.id)}
                     >
                       <CloudDownload
@@ -1009,14 +1388,27 @@ export function RepositoryWorkspace({
                 </div>
                 <div className="repository-header__meta">
                   {selectedRepository.upstream ? (
-                    <>
+                    <button
+                      className="sync-control"
+                      type="button"
+                      title="Pull incoming changes, then push outgoing changes"
+                      aria-label={`Sync changes: ${selectedRepository.incoming} incoming, ${selectedRepository.outgoing} outgoing`}
+                      disabled={Boolean(syncing || fetching || changeBusy)}
+                      onClick={() => void syncSelectedRepository(selectedRepository.id)}
+                    >
+                      <RefreshCw
+                        className={
+                          syncing === selectedRepository.id ? "is-spinning" : ""
+                        }
+                        size={11}
+                      />
                       <span>
                         <ArrowDown size={11} /> {selectedRepository.incoming} incoming
                       </span>
                       <span>
                         <ArrowUp size={11} /> {selectedRepository.outgoing} outgoing
                       </span>
-                    </>
+                    </button>
                   ) : (
                     <span className="no-upstream">No upstream configured</span>
                   )}
@@ -1088,6 +1480,33 @@ export function RepositoryWorkspace({
                   </button>
                 ))}
               </div>
+              {tab === "changes" && (
+                <div className="commit-toolbar">
+                  <span>
+                    <GitCommitHorizontal size={13} />
+                    {stagedCount
+                      ? `${stagedCount} staged ${stagedCount === 1 ? "file" : "files"}`
+                      : "No staged changes"}
+                  </span>
+                  <button
+                    className="primary-button"
+                    type="button"
+                    title={commitDisabledReason}
+                    disabled={Boolean(
+                      !stagedCount ||
+                        hasConflicts ||
+                        changeBusy ||
+                        syncing ||
+                        fetching ||
+                        committing,
+                    )}
+                    onClick={() => void openCommitModal()}
+                  >
+                    <GitCommitHorizontal size={13} />
+                    Commit
+                  </button>
+                </div>
+              )}
               {tab !== "commits" && (
                 <label className="context-search">
                   <Search size={13} />
@@ -1141,12 +1560,17 @@ export function RepositoryWorkspace({
                     changes={changes}
                     selected={compareRequest}
                     search={contextSearch}
+                    busy={changeBusy}
+                    disabled={Boolean(syncing || fetching)}
                     onSelect={(change) =>
                       setCompareRequest({
                         path: change.path,
                         previousPath: change.previousPath,
                         scope: change.scope,
                       })
+                    }
+                    onAction={(action, selection) =>
+                      void performChangeAction(action, selection)
                     }
                   />
                 ) : tab === "commits" ? (
@@ -1334,6 +1758,27 @@ export function RepositoryWorkspace({
           type="button"
           aria-label="Close repositories"
           onClick={() => setMobileOpen(false)}
+        />
+      )}
+      {commitModalOpen && (
+        <CommitModal
+          context={commitContext}
+          message={commitMessage}
+          error={commitError}
+          aiStatus={aiStatus}
+          preparing={commitPreparing}
+          committing={committing}
+          generating={aiGenerating}
+          onMessageChange={setCommitMessage}
+          onClose={closeCommitModal}
+          onCommit={() => void submitCommit()}
+          onGenerate={() => void generateCommitMessage()}
+          onCancelGeneration={() => void cancelCommitMessageGeneration()}
+          onProviderChange={(provider) => void changeAiPreferences(provider)}
+          onModelChange={(model) =>
+            aiStatus && void changeAiPreferences(aiStatus.provider, model)
+          }
+          onLocateAi={() => void locateAiExecutable()}
         />
       )}
     </main>

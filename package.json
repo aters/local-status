@@ -1,5 +1,6 @@
 {
   "name": "local-status",
+  "productName": "Local Status",
   "version": "1.0.0",
   "description": "A private, local-first desktop workspace for multiple Git repositories.",
   "private": true,
@@ -12,7 +13,7 @@
     "postinstall": "electron-rebuild -f -w node-pty",
     "dev": "node scripts/dev.mjs",
     "build": "tsc --noEmit && vite build",
-    "start": "npm run build && electron .",
+    "start": "npm run build && node scripts/launch-electron.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "npm run build && playwright test",
@@ -28,7 +29,9 @@
     "monaco-editor": "0.52.2",
     "node-pty": "1.1.0",
     "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react-dom": "19.2.6",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1"
   },
   "devDependencies": {
     "@electron/rebuild": "4.2.0",

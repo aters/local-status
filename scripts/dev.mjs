@@ -1,10 +1,10 @@
 import { spawn } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { prepareBrandedElectron } from "./electron-runtime.mjs";
 
 const appDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const vite = join(appDirectory, "node_modules", "vite", "bin", "vite.js");
-const electron = join(appDirectory, "node_modules", "electron", "cli.js");
 
 const renderer = spawn(process.execPath, [vite], {
   cwd: appDirectory,
@@ -36,7 +36,7 @@ function stop() {
 
 try {
   await waitForRenderer();
-  desktop = spawn(process.execPath, [electron, "."], {
+  desktop = spawn(prepareBrandedElectron(), [appDirectory], {
     cwd: appDirectory,
     env: {
       ...process.env,

@@ -19,6 +19,18 @@ import type {
 
 type AppView = "repositories" | "services";
 
+function ProductLogo({ className }: { className: string }) {
+  return (
+    <img
+      className={className}
+      src="/local-status-logo.png"
+      alt=""
+      aria-hidden="true"
+      draggable="false"
+    />
+  );
+}
+
 function initialView(): AppView {
   return routeParams().get("view") === "services" ? "services" : "repositories";
 }
@@ -39,7 +51,7 @@ function Onboarding({
   return (
     <main className="onboarding">
       <section className="onboarding-card">
-        <div className="onboarding-mark">LS</div>
+        <ProductLogo className="onboarding-mark" />
         <p className="eyebrow">Local-first development workspace</p>
         <h1>Every repository, one clear view.</h1>
         <p className="onboarding-copy">
@@ -202,7 +214,7 @@ export function App() {
   if (!workspace) {
     return (
       <div className="app-boot">
-        <span className="brand-mark">LS</span>
+        <ProductLogo className="brand-mark" />
         <strong>Opening Local Status…</strong>
       </div>
     );
@@ -224,7 +236,7 @@ export function App() {
     <div className="app-shell">
       <header className="app-header">
         <div className="app-brand">
-          <span className="brand-mark">LS</span>
+          <ProductLogo className="brand-mark" />
           <div>
             <strong>Local Status</strong>
             <span>Private desktop workspace</span>

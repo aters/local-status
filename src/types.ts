@@ -66,6 +66,79 @@ export interface ChangeItem {
   status: string;
 }
 
+export type ChangeAction = "stage" | "unstage" | "revert";
+export type ChangeActionScope =
+  | Exclude<ChangeScope, "commit">
+  | "unstaged";
+
+export interface ChangeSelection {
+  scope: ChangeActionScope;
+  path?: string | null;
+}
+
+export interface ChangeMutationResult {
+  repositoryId: string;
+  changes: ChangeItem[];
+  cancelled?: boolean;
+}
+
+export interface StagedCommitFile {
+  path: string;
+  previousPath: string | null;
+  kind: ChangeKind;
+  status: string;
+}
+
+export interface CommitContext {
+  repositoryId: string;
+  snapshotId: string;
+  branch: string | null;
+  detached: boolean;
+  unborn: boolean;
+  stagedFiles: StagedCommitFile[];
+}
+
+export interface CommitResult {
+  repositoryId: string;
+  commit: Commit;
+  changes: ChangeItem[];
+}
+
+export type AiProvider = "codex" | "claude";
+
+export interface AiModel {
+  id: string;
+  label: string;
+  description: string;
+}
+
+export interface AiProviderStatus {
+  id: AiProvider;
+  label: string;
+  available: boolean;
+  authenticated: boolean;
+  executablePath: string | null;
+  version: string | null;
+  models: AiModel[];
+  error: string | null;
+}
+
+export interface AiStatus {
+  provider: AiProvider;
+  model: string;
+  selectedModels: Record<AiProvider, string>;
+  disclosureAccepted: boolean;
+  providers: Record<AiProvider, AiProviderStatus>;
+}
+
+export interface GeneratedCommitMessage {
+  message: string;
+  snapshotId: string;
+  patchTruncated: boolean;
+  provider: AiProvider;
+  model: string;
+}
+
 export interface FileChange {
   status: string;
   path: string;
@@ -184,10 +257,48 @@ export interface LocalStatusBridge {
         error?: string;
       }>;
     }>;
+    prepareCommit(repositoryId: string): Promise<CommitContext>;
+    createCommit(
+      repositoryId: string,
+      input: { message: string; snapshotId: string },
+    ): Promise<CommitResult>;
+    stage(
+      repositoryId: string,
+      selection: ChangeSelection,
+    ): Promise<ChangeMutationResult>;
+    unstage(
+      repositoryId: string,
+      selection: ChangeSelection,
+    ): Promise<ChangeMutationResult>;
+    revert(
+      repositoryId: string,
+      selection: ChangeSelection,
+    ): Promise<ChangeMutationResult>;
+    sync(repositoryId: string): Promise<{
+      repositoryId: string;
+      upstream: string;
+      pulled: number;
+      pushed: number;
+      incoming: number;
+      outgoing: number;
+      syncedAt: string;
+    }>;
     scripts(repositoryId: string): Promise<{
       repositoryId: string;
       scripts: RepositoryScript[];
     }>;
+  };
+  ai: {
+    status(): Promise<AiStatus>;
+    setPreferences(provider: AiProvider, model: string): Promise<AiStatus>;
+    chooseExecutable(provider: AiProvider): Promise<AiStatus>;
+    acceptDisclosure(provider: AiProvider): Promise<boolean>;
+    generateCommitMessage(input: {
+      repositoryId: string;
+      snapshotId: string;
+      requestId: string;
+    }): Promise<GeneratedCommitMessage>;
+    cancelGeneration(requestId: string): Promise<boolean>;
   };
   profiles: {
     list(): Promise<ServiceProfile[]>;

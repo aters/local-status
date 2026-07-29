@@ -22,7 +22,31 @@ contextBridge.exposeInMainWorld("localStatus", {
       invoke("repositories:comparison", { repositoryId, options }),
     fetch: (repositoryId) => invoke("repositories:fetch", { repositoryId }),
     fetchAll: () => invoke("repositories:fetch-all"),
+    prepareCommit: (repositoryId) =>
+      invoke("repositories:prepare-commit", { repositoryId }),
+    createCommit: (repositoryId, input) =>
+      invoke("repositories:create-commit", { repositoryId, input }),
+    stage: (repositoryId, selection) =>
+      invoke("repositories:stage", { repositoryId, selection }),
+    unstage: (repositoryId, selection) =>
+      invoke("repositories:unstage", { repositoryId, selection }),
+    revert: (repositoryId, selection) =>
+      invoke("repositories:revert", { repositoryId, selection }),
+    sync: (repositoryId) => invoke("repositories:sync", { repositoryId }),
     scripts: (repositoryId) => invoke("repositories:scripts", { repositoryId }),
+  },
+  ai: {
+    status: () => invoke("ai:status"),
+    setPreferences: (provider, model) =>
+      invoke("ai:set-preferences", { provider, model }),
+    chooseExecutable: (provider) =>
+      invoke("ai:choose-executable", { provider }),
+    acceptDisclosure: (provider) =>
+      invoke("ai:accept-disclosure", { provider }),
+    generateCommitMessage: (input) =>
+      invoke("ai:generate-commit-message", input),
+    cancelGeneration: (requestId) =>
+      invoke("ai:cancel-generation", { requestId }),
   },
   profiles: {
     list: () => invoke("profiles:list"),

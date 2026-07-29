@@ -7,14 +7,18 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  Menu,
   net,
+  nativeImage,
   protocol,
   shell,
 } from "electron";
 import pty from "node-pty";
 import {
+  commitMessageContext,
   commitDetails,
   comparisonContents,
+  createCommit,
   fetchAll,
   fetchOne,
   getRepository,
@@ -24,8 +28,15 @@ import {
   repositoryChanges,
   repositoryCommits,
   repositoryFiles,
+  prepareCommit,
+  revertChanges,
+  stageChanges,
+  syncRepository,
+  unstageChanges,
 } from "../server/git-service.mjs";
+import { AiRunner } from "./codex-runner.mjs";
 import { discoverScripts } from "./script-discovery.mjs";
+import { applicationMenuTemplate } from "./application-menu.mjs";
 import { SettingsStore } from "./settings-store.mjs";
 import { TerminalManager } from "./terminal-manager.mjs";
 import { WorkspaceManager } from "./workspace-manager.mjs";
@@ -33,7 +44,16 @@ import { WorkspaceManager } from "./workspace-manager.mjs";
 const appDirectory = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const rendererRoot = join(appDirectory, "dist");
 const preloadPath = join(appDirectory, "electron", "preload.cjs");
+const appIconPath = join(appDirectory, "assets", "local-status-icon.png");
+const commitMessageSchemaPath = join(
+  appDirectory,
+  "electron",
+  "commit-message.schema.json",
+);
 const developmentUrl = process.env.LOCAL_STATUS_DEV_URL || null;
+
+// Keep Electron's internal app identity aligned with the branded runtime bundle.
+app.setName("Local Status");
 
 if (process.env.LOCAL_STATUS_TEST_USER_DATA) {
   app.setPath("userData", process.env.LOCAL_STATUS_TEST_USER_DATA);
@@ -58,7 +78,28 @@ let mainWindow = null;
 let settingsStore;
 let workspaceManager;
 let terminalManager;
+let aiRunner;
 let quitting = false;
+
+function configureApplicationIdentity() {
+  const appIcon = nativeImage.createFromPath(appIconPath);
+  if (!appIcon.isEmpty() && process.platform === "darwin") {
+    app.dock?.setIcon(appIcon);
+  }
+
+  app.setAboutPanelOptions({
+    applicationName: "Local Status",
+    applicationVersion: app.getVersion(),
+    copyright: "MIT licensed",
+    credits: "A local desktop workspace for multiple Git repositories.",
+  });
+
+  if (process.platform === "darwin") {
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate(applicationMenuTemplate()),
+    );
+  }
+}
 
 function assertSender(event) {
   const source = event.senderFrame?.url || "";
@@ -145,6 +186,92 @@ function validateProfileInput(input) {
   };
 }
 
+function validateChangeSelection(input) {
+  const request = requireObject(input, "change selection");
+  const scope = requireString(request.scope, "change scope", 20);
+  if (!["conflict", "staged", "working", "untracked", "unstaged"].includes(scope)) {
+    throw new Error("Invalid change scope.");
+  }
+  return {
+    scope,
+    path:
+      request.path === undefined || request.path === null
+        ? null
+        : requireString(request.path, "file path", 8_192),
+  };
+}
+
+function validateCommitInput(input) {
+  const request = requireObject(input, "commit");
+  const message = requireString(request.message, "commit message", 20_000);
+  const snapshotId = requireString(
+    request.snapshotId,
+    "staged snapshot",
+    64,
+  );
+  if (!/^[0-9a-f]{64}$/i.test(snapshotId) || message.includes("\0")) {
+    throw new Error("Invalid commit request.");
+  }
+  return { message, snapshotId };
+}
+
+function validateAiGeneration(input) {
+  const request = requireObject(input, "AI generation");
+  const snapshotId = requireString(
+    request.snapshotId,
+    "staged snapshot",
+    64,
+  );
+  const requestId = requireString(request.requestId, "generation request", 100);
+  if (
+    !/^[0-9a-f]{64}$/i.test(snapshotId) ||
+    !/^[a-zA-Z0-9-]{8,100}$/.test(requestId)
+  ) {
+    throw new Error("Invalid AI generation request.");
+  }
+  return {
+    repositoryId: requireString(request.repositoryId, "repository", 255),
+    snapshotId,
+    requestId,
+  };
+}
+
+async function confirmRevert(selection) {
+  const isUnstaged = selection.scope === "unstaged";
+  const isUntracked = selection.scope === "untracked";
+  const target = selection.path
+    ? `“${selection.path}”`
+    : isUnstaged
+      ? "all unstaged changes"
+      : `all ${selection.scope === "untracked" ? "untracked files" : "working tree changes"}`;
+  const title = isUntracked
+    ? "Delete untracked work?"
+    : isUnstaged
+      ? "Discard all unstaged changes?"
+      : "Discard local changes?";
+  const detail = isUnstaged
+    ? "Tracked edits will be replaced by the index version, and untracked files will be permanently deleted. This cannot be undone by Git."
+    : isUntracked
+      ? "Untracked files will be permanently deleted. This cannot be undone by Git."
+      : "The selected working tree edits will be replaced by the index version.";
+  const primaryAction = isUntracked
+    ? "Delete"
+    : isUnstaged
+      ? "Discard all"
+      : "Discard";
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: "warning",
+    title,
+    message: `${isUntracked ? "Delete" : "Discard"} ${target}?`,
+    detail,
+    buttons: [primaryAction, "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+  });
+  return result.response === 0;
+}
+
 async function terminalSpec(input) {
   const request = requireObject(input);
   const repositoryId = requireString(request.repositoryId, "repository", 255);
@@ -205,11 +332,15 @@ function registerIpc() {
       properties: ["openDirectory"],
     });
     if (result.canceled || !result.filePaths[0]) return workspaceManager.state();
+    aiRunner.stopAll();
     return workspaceManager.open(result.filePaths[0]);
   });
   handle("workspace:open", async (payload) => {
     if (!(await confirmStopForWorkspaceChange())) return workspaceManager.state();
-    return workspaceManager.open(requireString(requireObject(payload).path, "workspace path"));
+    aiRunner.stopAll();
+    return workspaceManager.open(
+      requireString(requireObject(payload).path, "workspace path"),
+    );
   });
 
   handle("repositories:list", () => listRepositorySummaries());
@@ -247,6 +378,44 @@ function registerIpc() {
     fetchOne(requireString(requireObject(payload).repositoryId, "repository")),
   );
   handle("repositories:fetch-all", () => fetchAll());
+  handle("repositories:prepare-commit", (payload) =>
+    prepareCommit(
+      requireString(requireObject(payload).repositoryId, "repository"),
+    ),
+  );
+  handle("repositories:create-commit", (payload) => {
+    const request = requireObject(payload);
+    return createCommit(
+      requireString(request.repositoryId, "repository"),
+      validateCommitInput(request.input),
+    );
+  });
+  handle("repositories:stage", (payload) => {
+    const request = requireObject(payload);
+    return stageChanges(
+      requireString(request.repositoryId, "repository"),
+      validateChangeSelection(request.selection),
+    );
+  });
+  handle("repositories:unstage", (payload) => {
+    const request = requireObject(payload);
+    return unstageChanges(
+      requireString(request.repositoryId, "repository"),
+      validateChangeSelection(request.selection),
+    );
+  });
+  handle("repositories:revert", async (payload) => {
+    const request = requireObject(payload);
+    const repositoryId = requireString(request.repositoryId, "repository");
+    const selection = validateChangeSelection(request.selection);
+    if (!(await confirmRevert(selection))) {
+      return { ...(await repositoryChanges(repositoryId)), cancelled: true };
+    }
+    return revertChanges(repositoryId, selection);
+  });
+  handle("repositories:sync", (payload) =>
+    syncRepository(requireString(requireObject(payload).repositoryId, "repository")),
+  );
   handle("repositories:scripts", async (payload) => {
     const repositoryId = requireString(
       requireObject(payload).repositoryId,
@@ -255,6 +424,80 @@ function registerIpc() {
     const repository = await getRepository(repositoryId);
     return { repositoryId, scripts: await discoverScripts(repository.path) };
   });
+
+  handle("ai:status", () => aiRunner.status());
+  handle("ai:set-preferences", (payload) => {
+    const request = requireObject(payload, "AI preferences");
+    return aiRunner.setPreferences(
+      requireString(request.provider, "AI provider", 20),
+      requireString(request.model, "AI model", 100),
+    );
+  });
+  handle("ai:choose-executable", async (payload) => {
+    const provider = requireString(
+      requireObject(payload).provider,
+      "AI provider",
+      20,
+    );
+    if (!["codex", "claude"].includes(provider)) {
+      throw new Error("Invalid AI provider.");
+    }
+    const label = provider === "codex" ? "Codex" : "Claude";
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: `Locate the ${label} CLI executable`,
+      buttonLabel: `Use ${label} CLI`,
+      properties: ["openFile"],
+    });
+    if (result.canceled || !result.filePaths[0]) return aiRunner.status();
+    return aiRunner.setExecutable(provider, result.filePaths[0]);
+  });
+  handle("ai:accept-disclosure", async (payload) => {
+    const provider = requireString(
+      requireObject(payload).provider,
+      "AI provider",
+      20,
+    );
+    if (!["codex", "claude"].includes(provider)) {
+      throw new Error("Invalid AI provider.");
+    }
+    if (settingsStore.aiSettings().disclosureAccepted[provider]) return true;
+    if (process.env.LOCAL_STATUS_TEST_ACCEPT_AI_DISCLOSURE === "1") {
+      await aiRunner.acceptDisclosure(provider);
+      return true;
+    }
+    const label = provider === "codex" ? "Codex" : "Claude";
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: "info",
+      title: `Send staged changes to ${label}?`,
+      message: `${label} needs the staged diff to draft a commit message.`,
+      detail:
+        `The staged diff, file names, statistics, and recent commit subjects will be processed through your configured ${label} account or provider. Local Status does not read or store your ${label} credentials.`,
+      buttons: ["Continue", "Cancel"],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    });
+    if (result.response !== 0) return false;
+    await aiRunner.acceptDisclosure(provider);
+    return true;
+  });
+  handle("ai:generate-commit-message", async (payload) => {
+    const request = validateAiGeneration(payload);
+    const context = await commitMessageContext(
+      request.repositoryId,
+      request.snapshotId,
+    );
+    return aiRunner.generate(request.requestId, context);
+  });
+  handle("ai:cancel-generation", (payload) =>
+    aiRunner.cancel(
+      requireString(
+        requireObject(payload).requestId,
+        "generation request",
+        100,
+      ),
+    ),
+  );
 
   handle("profiles:list", () =>
     getWorkspaceRoot() ? settingsStore.profilesFor(getWorkspaceRoot()) : [],
@@ -340,6 +583,7 @@ async function registerRendererProtocol() {
 async function createWindow() {
   mainWindow = new BrowserWindow({
     title: "Local Status",
+    icon: appIconPath,
     width: 1440,
     height: 900,
     minWidth: 820,
@@ -354,7 +598,7 @@ async function createWindow() {
       webSecurity: true,
     },
   });
-  mainWindow.removeMenu();
+  if (process.platform !== "darwin") mainWindow.removeMenu();
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   mainWindow.webContents.on("will-navigate", (event, navigationUrl) => {
     const allowed = developmentUrl
@@ -375,10 +619,15 @@ async function createWindow() {
 
 async function startApplication() {
   await app.whenReady();
-  app.setName("Local Status");
+  configureApplicationIdentity();
   if (!developmentUrl) await registerRendererProtocol();
   settingsStore = new SettingsStore(join(app.getPath("userData"), "settings.json"));
   await settingsStore.load();
+  aiRunner = new AiRunner({
+    settingsStore,
+    schemaPath: commitMessageSchemaPath,
+    temporaryDirectory: app.getPath("temp"),
+  });
   workspaceManager = new WorkspaceManager(settingsStore);
   await workspaceManager.restore();
   if (process.env.LOCAL_STATUS_TEST_WORKSPACE) {
@@ -400,7 +649,10 @@ async function startApplication() {
   });
   app.on("window-all-closed", () => app.quit());
   app.on("before-quit", (event) => {
-    if (quitting || !terminalManager.hasRunningSessions()) return;
+    if (quitting || !terminalManager.hasRunningSessions()) {
+      aiRunner.stopAll();
+      return;
+    }
     event.preventDefault();
     void dialog
       .showMessageBox(mainWindow, {
@@ -414,6 +666,7 @@ async function startApplication() {
       .then(async (result) => {
         if (result.response !== 0) return;
         quitting = true;
+    aiRunner.stopAll();
         await terminalManager.stopAll();
         app.quit();
       });
