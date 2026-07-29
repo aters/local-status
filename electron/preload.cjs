@@ -1,0 +1,59 @@
+const { contextBridge, ipcRenderer } = require("electron");
+
+const terminalListeners = new Map();
+
+const invoke = (channel, payload) => ipcRenderer.invoke(channel, payload);
+
+contextBridge.exposeInMainWorld("localStatus", {
+  workspace: {
+    getCurrent: () => invoke("workspace:get"),
+    choose: () => invoke("workspace:choose"),
+    openRecent: (path) => invoke("workspace:open", { path }),
+  },
+  repositories: {
+    list: () => invoke("repositories:list"),
+    changes: (repositoryId) => invoke("repositories:changes", { repositoryId }),
+    commits: (repositoryId, scope) =>
+      invoke("repositories:commits", { repositoryId, scope }),
+    commit: (repositoryId, sha) =>
+      invoke("repositories:commit", { repositoryId, sha }),
+    files: (repositoryId) => invoke("repositories:files", { repositoryId }),
+    comparison: (repositoryId, options) =>
+      invoke("repositories:comparison", { repositoryId, options }),
+    fetch: (repositoryId) => invoke("repositories:fetch", { repositoryId }),
+    fetchAll: () => invoke("repositories:fetch-all"),
+    scripts: (repositoryId) => invoke("repositories:scripts", { repositoryId }),
+  },
+  profiles: {
+    list: () => invoke("profiles:list"),
+    save: (profile) => invoke("profiles:save", { profile }),
+    remove: (profileId) => invoke("profiles:remove", { profileId }),
+  },
+  terminals: {
+    list: () => invoke("terminals:list"),
+    create: (input) => invoke("terminals:create", input),
+    write: (sessionId, data) => invoke("terminals:write", { sessionId, data }),
+    resize: (sessionId, cols, rows) =>
+      invoke("terminals:resize", { sessionId, cols, rows }),
+    stop: (sessionId) => invoke("terminals:stop", { sessionId }),
+    restart: (sessionId) => invoke("terminals:restart", { sessionId }),
+    rename: (sessionId, title) => invoke("terminals:rename", { sessionId, title }),
+    close: (sessionId) => invoke("terminals:close", { sessionId }),
+    onEvent: (callback) => {
+      if (typeof callback !== "function" || terminalListeners.has(callback)) return;
+      const listener = (_event, payload) => callback(payload);
+      terminalListeners.set(callback, listener);
+      ipcRenderer.on("terminals:event", listener);
+    },
+    offEvent: (callback) => {
+      const listener = terminalListeners.get(callback);
+      if (!listener) return;
+      ipcRenderer.removeListener("terminals:event", listener);
+      terminalListeners.delete(callback);
+    },
+  },
+  system: {
+    listeners: () => invoke("system:listeners"),
+    openLocalUrl: (url) => invoke("system:open-local-url", { url }),
+  },
+});

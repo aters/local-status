@@ -1,0 +1,211 @@
+import { DiffEditor } from "@monaco-editor/react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Columns2,
+  Rows3,
+  WrapText,
+} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { editor } from "monaco-editor";
+import "../monaco";
+import type { Comparison } from "../types";
+
+type DiffEditorInstance = editor.IStandaloneDiffEditor;
+
+function loadBoolean(key: string, fallback: boolean) {
+  const value = window.localStorage.getItem(key);
+  return value === null ? fallback : value === "true";
+}
+
+export default function MonacoDiff({ comparison }: { comparison: Comparison }) {
+  const editorRef = useRef<DiffEditorInstance | null>(null);
+  const changeIndex = useRef(-1);
+  const [sideBySide, setSideBySide] = useState(() =>
+    loadBoolean("local-status:side-by-side", true),
+  );
+  const [wrap, setWrap] = useState(() => loadBoolean("local-status:wrap", false));
+  const [ignoreWhitespace, setIgnoreWhitespace] = useState(() =>
+    loadBoolean("local-status:ignore-whitespace", false),
+  );
+
+  useEffect(() => {
+    window.localStorage.setItem("local-status:side-by-side", String(sideBySide));
+  }, [sideBySide]);
+  useEffect(() => {
+    window.localStorage.setItem("local-status:wrap", String(wrap));
+  }, [wrap]);
+  useEffect(() => {
+    window.localStorage.setItem(
+      "local-status:ignore-whitespace",
+      String(ignoreWhitespace),
+    );
+  }, [ignoreWhitespace]);
+  useEffect(() => {
+    changeIndex.current = -1;
+  }, [comparison.path, comparison.original.content, comparison.modified.content]);
+
+  const goToChange = useCallback((direction: 1 | -1) => {
+    const instance = editorRef.current;
+    const changes = instance?.getLineChanges() ?? [];
+    if (!changes.length || !instance) return;
+    changeIndex.current =
+      (changeIndex.current + direction + changes.length) % changes.length;
+    const change = changes[changeIndex.current];
+    const line =
+      change.modifiedStartLineNumber ||
+      change.originalStartLineNumber ||
+      1;
+    instance.getModifiedEditor().revealLineInCenter(line);
+    instance.getOriginalEditor().revealLineInCenter(change.originalStartLineNumber || 1);
+  }, []);
+
+  useEffect(() => {
+    const navigate = (event: KeyboardEvent) => {
+      if (event.key !== "F7") return;
+      event.preventDefault();
+      goToChange(event.shiftKey ? -1 : 1);
+    };
+    window.addEventListener("keydown", navigate);
+    return () => window.removeEventListener("keydown", navigate);
+  }, [goToChange]);
+
+  const unavailable = comparison.original.binary || comparison.modified.binary;
+
+  return (
+    <div className="diff-shell">
+      <div className="diff-toolbar">
+        <div className="diff-labels" aria-label="Compared versions">
+          <span>{comparison.original.label}</span>
+          <span aria-hidden="true">→</span>
+          <span>{comparison.modified.label}</span>
+        </div>
+        <div className="diff-actions">
+          <button
+            className="toolbar-button"
+            type="button"
+            onClick={() => goToChange(-1)}
+            title="Previous change"
+          >
+            <ArrowUp size={15} />
+            <span className="button-label">Previous</span>
+          </button>
+          <button
+            className="toolbar-button"
+            type="button"
+            onClick={() => goToChange(1)}
+            title="Next change"
+          >
+            <ArrowDown size={15} />
+            <span className="button-label">Next</span>
+          </button>
+          <span className="toolbar-divider" />
+          <button
+            className={`toolbar-button ${wrap ? "is-active" : ""}`}
+            type="button"
+            aria-pressed={wrap}
+            onClick={() => setWrap((current) => !current)}
+            title="Toggle line wrapping"
+          >
+            <WrapText size={15} />
+            <span className="button-label">Wrap</span>
+          </button>
+          <button
+            className={`toolbar-button ${ignoreWhitespace ? "is-active" : ""}`}
+            type="button"
+            aria-pressed={ignoreWhitespace}
+            onClick={() => setIgnoreWhitespace((current) => !current)}
+            title="Ignore leading and trailing whitespace"
+          >
+            <span className="whitespace-icon">¶</span>
+            <span className="button-label">Whitespace</span>
+          </button>
+          <button
+            className="toolbar-button view-toggle"
+            type="button"
+            onClick={() => setSideBySide((current) => !current)}
+            title={sideBySide ? "Switch to inline diff" : "Switch to side-by-side diff"}
+          >
+            {sideBySide ? <Rows3 size={15} /> : <Columns2 size={15} />}
+            <span className="button-label">{sideBySide ? "Inline" : "Side by side"}</span>
+          </button>
+        </div>
+      </div>
+
+      {(comparison.original.truncated || comparison.modified.truncated) && (
+        <div className="viewer-notice">
+          Preview limited to the first 1 MB to keep the workspace responsive.
+        </div>
+      )}
+      {unavailable ? (
+        <div className="viewer-empty">
+          <span className="empty-orbit">01</span>
+          <h3>Binary comparison unavailable</h3>
+          <p>This file is tracked, but its contents cannot be shown as text.</p>
+        </div>
+      ) : (
+        <DiffEditor
+          height="100%"
+          language={comparison.language}
+          originalModelPath={`inmemory://local-status/${encodeURIComponent(comparison.repositoryId)}/${encodeURIComponent(comparison.original.source)}/${encodeURIComponent(comparison.path)}`}
+          modifiedModelPath={`inmemory://local-status/${encodeURIComponent(comparison.repositoryId)}/${encodeURIComponent(comparison.modified.source)}/${encodeURIComponent(comparison.path)}`}
+          original={comparison.original.content}
+          modified={comparison.modified.content}
+          theme="local-status"
+          beforeMount={(monacoInstance) => {
+            monacoInstance.editor.defineTheme("local-status", {
+              base: "vs-dark",
+              inherit: true,
+              rules: [],
+              colors: {
+                "editor.background": "#0a1210",
+                "editorGutter.background": "#0a1210",
+                "editorLineNumber.foreground": "#496057",
+                "editorLineNumber.activeForeground": "#9bb5aa",
+                "diffEditor.insertedTextBackground": "#1f7a5242",
+                "diffEditor.removedTextBackground": "#b64b5542",
+                "diffEditor.insertedLineBackground": "#123b2b88",
+                "diffEditor.removedLineBackground": "#3d202588",
+                "diffEditor.diagonalFill": "#18231f",
+                "editorOverviewRuler.addedForeground": "#67dba0",
+                "editorOverviewRuler.deletedForeground": "#f2777f",
+                "scrollbarSlider.background": "#66807433",
+                "scrollbarSlider.hoverBackground": "#78998a66",
+              },
+            });
+          }}
+          onMount={(instance) => {
+            editorRef.current = instance;
+          }}
+          options={{
+            readOnly: true,
+            originalEditable: false,
+            automaticLayout: true,
+            renderSideBySide: sideBySide,
+            useInlineViewWhenSpaceIsLimited: true,
+            renderSideBySideInlineBreakpoint: 520,
+            splitViewDefaultRatio: 0.5,
+            ignoreTrimWhitespace: ignoreWhitespace,
+            wordWrap: wrap ? "on" : "off",
+            diffWordWrap: wrap ? "on" : "off",
+            minimap: { enabled: false },
+            fontFamily:
+              '"DM Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace',
+            fontSize: 12.5,
+            lineHeight: 20,
+            lineNumbersMinChars: 3,
+            scrollBeyondLastLine: false,
+            smoothScrolling: true,
+            renderOverviewRuler: true,
+            renderMarginRevertIcon: false,
+            glyphMargin: false,
+            folding: true,
+            padding: { top: 12, bottom: 16 },
+            stickyScroll: { enabled: true },
+            accessibilityVerbose: true,
+          }}
+        />
+      )}
+    </div>
+  );
+}
