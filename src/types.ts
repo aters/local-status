@@ -105,6 +105,7 @@ export interface CommitResult {
 }
 
 export type AiProvider = "codex" | "claude";
+export type AiTerminalAction = "install" | "login";
 
 export interface AiModel {
   id: string;

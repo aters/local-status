@@ -540,7 +540,7 @@ describe("Local Status", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("switches the commit draft provider and shows provider-specific setup", async () => {
+  it("installs a missing Claude CLI in a managed terminal", async () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(
@@ -562,10 +562,33 @@ describe("Local Status", () => {
     );
     expect(
       await within(dialog).findByRole("button", {
-        name: "Locate Claude CLI",
+        name: "Install Claude CLI",
       }),
     ).toBeVisible();
+    expect(
+      within(dialog).getByRole("button", { name: "Locate existing" }),
+    ).toBeVisible();
     expect(within(dialog).getByLabelText("Model")).toHaveValue("haiku");
+
+    await user.click(
+      within(dialog).getByRole("button", { name: "Install Claude CLI" }),
+    );
+
+    expect(window.localStatus.terminals.create).toHaveBeenCalledWith({
+      repositoryId: "changed-web",
+      kind: "shell",
+    });
+    expect(window.localStatus.terminals.rename).toHaveBeenCalledWith(
+      "terminal-1",
+      "Install Claude CLI",
+    );
+    expect(window.localStatus.terminals.write).toHaveBeenCalledWith(
+      "terminal-1",
+      'curl -fsSL https://claude.ai/install.sh | bash && "$HOME/.local/bin/claude"\r',
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Services & terminals" }),
+    ).toBeVisible();
   });
 
   it("closes the commit window with Escape and restores focus", async () => {

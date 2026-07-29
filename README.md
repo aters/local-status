@@ -132,8 +132,10 @@ claude auth login
 claude auth status
 ```
 
-If Local Status still cannot find it, use **Locate Codex CLI** or **Locate
-Claude CLI** in the commit window.
+If Claude is not installed, choose **Install Claude CLI** in the commit window.
+Local Status opens a managed terminal, runs Anthropic's native installer, and
+then launches Claude so you can finish sign-in. **Locate existing** remains
+available for installations in uncommon locations.
 
 ## License
 

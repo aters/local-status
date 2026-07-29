@@ -42,12 +42,13 @@ import {
 import { api } from "../api";
 import { routeParams, updateRoute } from "../route";
 import type {
+  AiProvider,
+  AiTerminalAction,
   ChangeAction,
   ChangeActionScope,
   ChangeItem,
   ChangeSelection,
   ChangeScope,
-  AiProvider,
   AiStatus,
   Commit,
   CommitContext,
@@ -562,6 +563,7 @@ export function RepositoryWorkspace({
   error,
   onRefresh,
   onStartTerminal,
+  onStartAiTerminal,
 }: {
   data: RepositoriesResponse | null;
   loading: boolean;
@@ -571,6 +573,12 @@ export function RepositoryWorkspace({
     repositoryId: string,
     kind: TerminalKind,
     option?: string,
+  ) => Promise<void>;
+  onStartAiTerminal: (
+    repositoryId: string,
+    provider: AiProvider,
+    action: AiTerminalAction,
+    executablePath: string | null,
   ) => Promise<void>;
 }) {
   const repositories = useMemo(() => data?.repositories ?? [], [data?.repositories]);
@@ -1077,6 +1085,26 @@ export function RepositoryWorkspace({
     } catch (caught) {
       setCommitError(
         caught instanceof Error ? caught.message : "The AI CLI could not be selected.",
+      );
+    }
+  }
+
+  async function startAiTerminal(action: AiTerminalAction) {
+    if (!selectedId || !aiStatus) return;
+    const provider = aiStatus.provider;
+    setCommitError(null);
+    try {
+      await onStartAiTerminal(
+        selectedId,
+        provider,
+        action,
+        aiStatus.providers[provider].executablePath,
+      );
+    } catch (caught) {
+      setCommitError(
+        caught instanceof Error
+          ? caught.message
+          : `Could not open the ${provider === "codex" ? "Codex" : "Claude"} setup terminal.`,
       );
     }
   }
@@ -1778,6 +1806,8 @@ export function RepositoryWorkspace({
           onModelChange={(model) =>
             aiStatus && void changeAiPreferences(aiStatus.provider, model)
           }
+          onInstallAi={() => void startAiTerminal("install")}
+          onSignInAi={() => void startAiTerminal("login")}
           onLocateAi={() => void locateAiExecutable()}
         />
       )}

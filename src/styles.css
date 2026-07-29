@@ -1381,10 +1381,70 @@ body.is-resizing {
   font-size: 8px;
 }
 
+.commit-modal__setup-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.commit-modal__setup-row > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.commit-modal__setup-row strong {
+  color: #b7cbc5;
+  font-size: 8px;
+  font-weight: 650;
+}
+
+.commit-modal__setup-row small {
+  color: #6f8982;
+  line-height: 1.4;
+}
+
+.commit-modal__setup-row > div {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+}
+
 .commit-modal__codex-actions .secondary-button {
   min-height: 29px;
   padding: 6px 9px;
   font-size: 8px;
+}
+
+.commit-modal__locate-button {
+  display: inline-flex;
+  min-height: 27px;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  border: 0;
+  color: #789089;
+  background: transparent;
+  font-size: 8px;
+  cursor: pointer;
+}
+
+.commit-modal__locate-button:hover {
+  color: #b7d7ce;
+}
+
+.commit-modal__locate-button:focus-visible {
+  border-radius: 5px;
+  outline: 2px solid var(--green);
+  outline-offset: 1px;
+}
+
+.commit-modal__locate-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .commit-modal__codex-actions code {

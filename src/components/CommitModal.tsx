@@ -4,10 +4,12 @@ import {
   GitBranch,
   GitCommitHorizontal,
   ChevronDown,
+  Download,
   LoaderCircle,
   LocateFixed,
   Settings2,
   Sparkles,
+  SquareTerminal,
   X,
 } from "lucide-react";
 import {
@@ -35,6 +37,8 @@ interface CommitModalProps {
   onCancelGeneration: () => void;
   onProviderChange: (provider: AiProvider) => void;
   onModelChange: (model: string) => void;
+  onInstallAi: () => void;
+  onSignInAi: () => void;
   onLocateAi: () => void;
 }
 
@@ -60,6 +64,8 @@ export function CommitModal({
   onCancelGeneration,
   onProviderChange,
   onModelChange,
+  onInstallAi,
+  onSignInAi,
   onLocateAi,
 }: CommitModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -353,28 +359,57 @@ export function CommitModal({
                   Checking AI providers…
                 </span>
               ) : !providerStatus?.available ? (
-                <>
-                  <span>{providerLabel} CLI was not found.</span>
+                <div className="commit-modal__setup-row">
+                  <span>
+                    <strong>{providerLabel} CLI is not installed</strong>
+                    <small>
+                      {aiStatus.provider === "claude"
+                        ? "Install it in a managed terminal, then finish sign-in there."
+                        : "Choose the existing executable to make it available here."}
+                    </small>
+                  </span>
+                  <div>
+                    {aiStatus.provider === "claude" && (
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        disabled={generating || committing}
+                        title="Run Anthropic's recommended native installer in a new terminal"
+                        onClick={onInstallAi}
+                      >
+                        <Download size={13} />
+                        Install Claude CLI
+                      </button>
+                    )}
+                    <button
+                      className="commit-modal__locate-button"
+                      type="button"
+                      disabled={generating || committing}
+                      onClick={onLocateAi}
+                    >
+                      <LocateFixed size={12} />
+                      Locate existing
+                    </button>
+                  </div>
+                </div>
+              ) : !providerStatus.authenticated ? (
+                <div className="commit-modal__setup-row">
+                  <span>
+                    <strong>{providerLabel} CLI needs sign-in</strong>
+                    <small>
+                      Continue through the provider's interactive login flow.
+                    </small>
+                  </span>
                   <button
                     className="secondary-button"
                     type="button"
                     disabled={generating || committing}
-                    onClick={onLocateAi}
+                    onClick={onSignInAi}
                   >
-                    <LocateFixed size={13} />
-                    Locate {providerLabel} CLI
+                    <SquareTerminal size={13} />
+                    Sign in to {providerLabel}
                   </button>
-                </>
-              ) : !providerStatus.authenticated ? (
-                <span>
-                  Sign in from a terminal with{" "}
-                  <code>
-                    {aiStatus.provider === "codex"
-                      ? "codex login"
-                      : "claude auth login"}
-                  </code>
-                  .
-                </span>
+                </div>
               ) : generating ? (
                 <>
                   <span className="commit-modal__codex-checking">

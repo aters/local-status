@@ -12,6 +12,8 @@ import { RepositoryWorkspace } from "./components/RepositoryWorkspace";
 import { ServicesView } from "./components/ServicesView";
 import { routeParams, updateRoute } from "./route";
 import type {
+  AiProvider,
+  AiTerminalAction,
   RepositoriesResponse,
   TerminalKind,
   WorkspaceState,
@@ -33,6 +35,10 @@ function ProductLogo({ className }: { className: string }) {
 
 function initialView(): AppView {
   return routeParams().get("view") === "services" ? "services" : "repositories";
+}
+
+function shellArgument(value: string) {
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 function Onboarding({
@@ -211,6 +217,42 @@ export function App() {
     updateRoute({ view: "services", terminal: session.id }, "push");
   }
 
+  async function startAiTerminal(
+    repositoryId: string,
+    provider: AiProvider,
+    action: AiTerminalAction,
+    executablePath: string | null,
+  ) {
+    const providerLabel = provider === "codex" ? "Codex" : "Claude";
+    const title =
+      action === "install"
+        ? `Install ${providerLabel} CLI`
+        : `Sign in to ${providerLabel}`;
+    const session = await api.createTerminal({
+      repositoryId,
+      kind: "shell",
+    });
+    await api.renameTerminal(session.id, title);
+
+    let command: string;
+    if (action === "install") {
+      if (provider !== "claude") {
+        throw new Error("Automatic installation is not available for this provider.");
+      }
+      command =
+        'curl -fsSL https://claude.ai/install.sh | bash && "$HOME/.local/bin/claude"';
+    } else {
+      const executable = executablePath
+        ? shellArgument(executablePath)
+        : provider;
+      command = provider === "codex" ? `${executable} login` : executable;
+    }
+    await api.writeTerminal(session.id, `${command}\r`);
+    setActiveSessionId(session.id);
+    setView("services");
+    updateRoute({ view: "services", terminal: session.id }, "push");
+  }
+
   if (!workspace) {
     return (
       <div className="app-boot">
@@ -280,6 +322,7 @@ export function App() {
           error={error}
           onRefresh={refreshRepositories}
           onStartTerminal={startTerminal}
+          onStartAiTerminal={startAiTerminal}
         />
       ) : (
         <ServicesView
