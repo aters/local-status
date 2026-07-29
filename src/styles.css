@@ -663,6 +663,10 @@ body.is-resizing {
   --repo-status-shadow: rgba(239, 189, 110, 0.18);
 }
 
+.repository-mark--list.repository-mark--changed {
+  --repo-status-shadow: transparent;
+}
+
 .repository-mark--conflict {
   --repo-status-color: #f38188;
   --repo-status-shadow: rgba(243, 129, 136, 0.22);
@@ -1682,6 +1686,7 @@ body.is-resizing {
   display: grid;
   min-width: 17px;
   height: 17px;
+  grid-column: 4;
   place-items: center;
   border-radius: 5px;
   color: #7f978b;
@@ -1750,7 +1755,7 @@ body.is-resizing {
   display: grid;
   min-width: 0;
   min-height: 43px;
-  grid-template-columns: 20px minmax(0, 1fr) 13px;
+  grid-template-columns: 20px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   padding: 5px 3px 5px 11px;
@@ -1759,10 +1764,6 @@ body.is-resizing {
   background: transparent;
   text-align: left;
   cursor: pointer;
-}
-
-.change-row__select > svg {
-  color: #50675c;
 }
 
 .change-row > .change-actions {
@@ -2061,7 +2062,6 @@ body.is-resizing {
 
 .viewer-back-button {
   flex: 0 0 30px;
-  transform: rotate(180deg);
 }
 
 .viewer-file-icon {
@@ -2954,7 +2954,6 @@ body.is-resizing {
     display: none;
   }
 
-  .mobile-only,
   .mobile-menu-button {
     display: grid;
   }
@@ -3049,6 +3048,10 @@ body.is-resizing {
 }
 
 @media (max-width: 640px) {
+  .mobile-only {
+    display: grid;
+  }
+
   .app-header {
     height: 56px;
     flex-basis: 56px;

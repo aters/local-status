@@ -332,6 +332,8 @@ describe("Local Status", () => {
 
     expect(await screen.findByText("changed-web")).toBeInTheDocument();
     expect(screen.getByText("clean-api")).toBeInTheDocument();
+    expect(screen.queryByText(/^Updated /)).not.toBeInTheDocument();
+    expect(screen.queryByText("Not fetched this session")).not.toBeInTheDocument();
     expect(screen.getByText("2", { selector: ".status-badge--incoming" })).toBeVisible();
     expect(
       screen.getByRole("option", { name: /changed-web/ }),
@@ -444,6 +446,7 @@ describe("Local Status", () => {
     render(<App />);
 
     expect(await screen.findByText("Unstaged")).toBeVisible();
+    expect(screen.queryByText("Not staged")).not.toBeInTheDocument();
     expect(screen.queryByText("Working tree")).not.toBeInTheDocument();
     expect(screen.queryByText("Untracked")).not.toBeInTheDocument();
     expect(screen.getByText("App.tsx")).toBeVisible();

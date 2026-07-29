@@ -5,9 +5,9 @@ import {
   Binary,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   CircleDot,
-  Clock3,
   CloudDownload,
   Code2,
   File,
@@ -157,7 +157,7 @@ const scopeGroups: Array<{
   scopes: WorkingChangeScope[];
   actionScope: ChangeActionScope;
   label: string;
-  description: string;
+  description?: string;
 }> = [
   {
     key: "conflict",
@@ -178,7 +178,6 @@ const scopeGroups: Array<{
     scopes: ["working", "untracked"],
     actionScope: "unstaged",
     label: "Unstaged",
-    description: "Not staged",
   },
 ];
 
@@ -477,7 +476,7 @@ function ChangeList({
               >
                 <ChevronDown className={isCollapsed ? "is-collapsed" : ""} size={13} />
                 <span>{group.label}</span>
-                <small>{group.description}</small>
+                {group.description && <small>{group.description}</small>}
                 <strong>{items.length}</strong>
               </button>
               {actionsForGroup(group)}
@@ -510,7 +509,6 @@ function ChangeList({
                             : pathDirectory(change.path) || "repository root"}
                         </small>
                       </span>
-                      <ChevronRight size={13} />
                     </button>
                     {actionsFor(change.scope as WorkingChangeScope, change.path)}
                   </div>
@@ -1318,9 +1316,7 @@ export function RepositoryWorkspace({
         <div className="overview-title">
           <span className="eyebrow">Local Git workspace</span>
           <strong>{data?.workspaceName || "Workspace"}</strong>
-          <span>
-            {loading ? "Scanning repositories…" : `Updated ${relativeTime(data?.generatedAt)}`}
-          </span>
+          {loading && <span>Scanning repositories…</span>}
         </div>
         <div className="overview-stats">
           <div>
@@ -1473,12 +1469,6 @@ export function RepositoryWorkspace({
                   ) : (
                     <span className="no-upstream">No upstream configured</span>
                   )}
-                  <span title={exactDate(selectedRepository.fetchedAt)}>
-                    <Clock3 size={11} />
-                    {selectedRepository.fetchedAt
-                      ? `Fetched ${relativeTime(selectedRepository.fetchedAt)}`
-                      : "Not fetched this session"}
-                  </span>
                 </div>
                 {terminalError && (
                   <div className="repository-run-error">{terminalError}</div>
@@ -1699,9 +1689,10 @@ export function RepositoryWorkspace({
                   className="icon-button viewer-back-button mobile-only"
                   type="button"
                   aria-label="Back to file list"
+                  title="Back to file list"
                   onClick={() => setCompareRequest(null)}
                 >
-                  <ChevronRight size={16} />
+                  <ChevronLeft size={16} />
                 </button>
                 <span
                   className={`viewer-file-icon viewer-file-icon--${
@@ -1744,9 +1735,10 @@ export function RepositoryWorkspace({
                   className="icon-button viewer-back-button mobile-only"
                   type="button"
                   aria-label="Back to commits"
+                  title="Back to commits"
                   onClick={() => setSelectedCommit(null)}
                 >
-                  <ChevronRight size={16} />
+                  <ChevronLeft size={16} />
                 </button>
                 <span className="commit-detail__icon">
                   <GitCommitHorizontal size={22} />
