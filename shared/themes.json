@@ -67,8 +67,8 @@
     "material": "liquid-glass",
     "layout": "immersive",
     "windowBackground": {
-      "light": "#e7edf5",
-      "dark": "#0b1018"
+      "light": "#ececee",
+      "dark": "#101012"
     }
   }
 }

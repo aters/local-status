@@ -823,8 +823,8 @@ test("renders adaptive Liquid Glass across workflows and accessibility states", 
   expect(lightMaterials.repositoryBlur).not.toBe("none");
   expect(lightMaterials.navigationBlur).toBe("none");
   expect(lightMaterials.contextBlur).toBe("none");
-  expect(lightMaterials.contextBackground).toBe("rgb(247, 249, 252)");
-  expect(lightMaterials.viewerBackground).toBe("rgb(247, 249, 252)");
+  expect(lightMaterials.contextBackground).toBe("rgb(245, 245, 247)");
+  expect(lightMaterials.viewerBackground).toBe("rgb(245, 245, 247)");
   expect(lightMaterials.headerRadius).toBeGreaterThanOrEqual(24);
   expect(lightMaterials.panelGaps.every((gap) => gap > 0)).toBe(true);
   expect(lightMaterials.document).toBe(lightMaterials.viewport);
@@ -839,6 +839,8 @@ test("renders adaptive Liquid Glass across workflows and accessibility states", 
       activeRadius: getComputedStyle(active).borderRadius,
       inactiveRadius: getComputedStyle(inactive).borderRadius,
       inactiveShadow: getComputedStyle(inactive).boxShadow,
+      activeColor: getComputedStyle(active).color,
+      bodyColor: getComputedStyle(document.body).color,
       activeBackground: getComputedStyle(active).backgroundColor,
       inactiveBackground: getComputedStyle(inactive).backgroundColor,
     };
@@ -850,6 +852,9 @@ test("renders adaptive Liquid Glass across workflows and accessibility states", 
     repositoryFilterMaterial.stripRadius,
   );
   expect(repositoryFilterMaterial.inactiveShadow).toBe("none");
+  expect(repositoryFilterMaterial.activeColor).toBe(
+    repositoryFilterMaterial.bodyColor,
+  );
   expect(repositoryFilterMaterial.activeBackground).not.toBe(
     repositoryFilterMaterial.inactiveBackground,
   );
@@ -863,6 +868,15 @@ test("renders adaptive Liquid Glass across workflows and accessibility states", 
   await expect(
     window.getByRole("menu", { name: "Switch workspace" }),
   ).toBeVisible();
+  const lightWorkspaceMenuOpacity = await window
+    .getByRole("menu", { name: "Switch workspace" })
+    .evaluate((element) => {
+      const channels = getComputedStyle(element).backgroundColor.match(
+        /[\d.]+/g,
+      );
+      return channels?.[3] ? Number(channels[3]) : 1;
+    });
+  expect(lightWorkspaceMenuOpacity).toBe(1);
   const [liquidHeaderBounds, liquidWorkspaceMenuBounds] = await Promise.all([
     window.locator(".app-header").boundingBox(),
     window.getByRole("menu", { name: "Switch workspace" }).boundingBox(),
@@ -895,7 +909,7 @@ test("renders adaptive Liquid Glass across workflows and accessibility states", 
   await expect(window.locator(".monaco-diff-editor")).toBeVisible();
   await expect(
     window.locator(".editor.original .lines-content.monaco-editor-background"),
-  ).toHaveCSS("background-color", "rgb(247, 249, 252)");
+  ).toHaveCSS("background-color", "rgb(245, 245, 247)");
   await window.screenshot({
     path: testInfo.outputPath("liquid-glass-light-diff.png"),
     animations: "disabled",
@@ -950,12 +964,31 @@ test("renders adaptive Liquid Glass across workflows and accessibility states", 
   await expect(root).toHaveAttribute("data-theme", "liquid-glass");
   await expect(root).toHaveAttribute("data-color-scheme", "dark");
   expect(await root.evaluate((element) => element.style.colorScheme)).toBe("dark");
+  await window.locator(".workspace-switcher").click();
+  const darkWorkspaceMenu = window.getByRole("menu", {
+    name: "Switch workspace",
+  });
+  await expect(darkWorkspaceMenu).toBeVisible();
+  const darkWorkspaceMenuOpacity = await darkWorkspaceMenu.evaluate(
+    (element) => {
+      const channels = getComputedStyle(element).backgroundColor.match(
+        /[\d.]+/g,
+      );
+      return channels?.[3] ? Number(channels[3]) : 1;
+    },
+  );
+  expect(darkWorkspaceMenuOpacity).toBe(1);
+  await window.screenshot({
+    path: testInfo.outputPath("liquid-glass-dark-workspace-menu.png"),
+    animations: "disabled",
+  });
+  await window.keyboard.press("Escape");
   await window.getByRole("button", { name: "Repositories" }).click();
   await window.getByText("changed-web").first().click();
   await window.locator('.change-row__select[title="README.md"]').click();
   await expect(
     window.locator(".editor.original .lines-content.monaco-editor-background"),
-  ).toHaveCSS("background-color", "rgb(17, 24, 39)");
+  ).toHaveCSS("background-color", "rgb(21, 21, 23)");
   await window.screenshot({
     path: testInfo.outputPath("liquid-glass-dark-diff.png"),
     animations: "disabled",
@@ -975,6 +1008,8 @@ test("renders adaptive Liquid Glass across workflows and accessibility states", 
         (button) => getComputedStyle(button).borderRadius,
       ),
       inactiveShadow: getComputedStyle(inactive).boxShadow,
+      activeColor: getComputedStyle(active).color,
+      bodyColor: getComputedStyle(document.body).color,
       activeBackground: getComputedStyle(active).backgroundColor,
       inactiveBackground: getComputedStyle(inactive).backgroundColor,
     };
@@ -985,6 +1020,7 @@ test("renders adaptive Liquid Glass across workflows and accessibility states", 
     ),
   ).toBe(true);
   expect(commitScopeMaterial.inactiveShadow).toBe("none");
+  expect(commitScopeMaterial.activeColor).toBe(commitScopeMaterial.bodyColor);
   expect(commitScopeMaterial.activeBackground).not.toBe(
     commitScopeMaterial.inactiveBackground,
   );

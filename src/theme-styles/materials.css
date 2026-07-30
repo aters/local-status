@@ -959,17 +959,29 @@
   border-color: var(--liquid-rim);
   background:
     radial-gradient(
-      190px circle at var(--liquid-pointer-x, 50%) var(--liquid-pointer-y, 0%),
+      180px circle at var(--liquid-pointer-x, 50%) var(--liquid-pointer-y, 0%),
       var(--liquid-refract),
-      transparent 62%
+      transparent 58%
     ),
-    linear-gradient(135deg, var(--liquid-specular), transparent 34%),
+    linear-gradient(
+      118deg,
+      var(--liquid-specular),
+      transparent 30%,
+      var(--liquid-spectrum-cool) 58%,
+      transparent 70%
+    ),
+    linear-gradient(
+      248deg,
+      transparent 58%,
+      var(--liquid-spectrum-warm) 80%,
+      transparent
+    ),
     var(--liquid-glass-fill);
   box-shadow: var(--material-panel-shadow);
   backdrop-filter:
     blur(var(--material-blur))
-    saturate(145%)
-    contrast(104%);
+    saturate(125%)
+    contrast(102%);
 }
 
 :root[data-material="liquid-glass"]
@@ -989,14 +1001,26 @@
     radial-gradient(
       220px circle at var(--liquid-pointer-x, 50%) var(--liquid-pointer-y, 0%),
       var(--liquid-refract),
-      transparent 64%
+      transparent 60%
     ),
-    linear-gradient(145deg, var(--liquid-specular), transparent 38%),
+    linear-gradient(
+      126deg,
+      var(--liquid-specular),
+      transparent 34%,
+      var(--liquid-spectrum-cool) 64%,
+      transparent 74%
+    ),
+    linear-gradient(
+      240deg,
+      transparent 58%,
+      var(--liquid-spectrum-warm) 82%,
+      transparent
+    ),
     var(--liquid-glass-thick);
   backdrop-filter:
-    blur(calc(var(--material-blur) + 6px))
-    saturate(150%)
-    contrast(106%);
+    blur(calc(var(--material-blur) + 10px))
+    saturate(112%)
+    contrast(105%);
 }
 
 :root[data-material="liquid-glass"]
@@ -1131,11 +1155,11 @@
     .filter-strip button:hover,
     .change-action:hover:not(:disabled)
   ) {
-  border-color: var(--material-border-strong);
+  border-color: var(--liquid-selection-border);
   color: var(--text);
   background: var(--material-control-hover);
   box-shadow:
-    0 8px 20px color-mix(in srgb, var(--shadow) 38%, transparent),
+    0 6px 18px color-mix(in srgb, var(--shadow) 28%, transparent),
     inset 0 1px 0 var(--liquid-specular);
 }
 
@@ -1149,7 +1173,7 @@
 }
 
 :root[data-material="liquid-glass"]
-  :where(
+  :is(
     .app-nav button.is-active,
     .app-settings-button.is-active,
     .context-tabs button.is-active,
@@ -1164,17 +1188,17 @@
     .quick-open__result.is-active,
     .theme-card.is-selected
   ) {
-  border-color: var(--material-border-strong);
-  color: var(--green);
+  border-color: var(--liquid-selection-border);
+  color: var(--text);
   background:
     linear-gradient(
       145deg,
-      color-mix(in srgb, var(--green) 18%, transparent),
-      color-mix(in srgb, var(--green) 7%, var(--material-control-active))
+      color-mix(in srgb, var(--liquid-selection) 92%, transparent),
+      color-mix(in srgb, var(--liquid-selection) 62%, var(--material-control-active))
     );
   box-shadow:
-    0 8px 24px color-mix(in srgb, var(--green) 12%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--green) 22%, white);
+    0 5px 16px color-mix(in srgb, var(--shadow) 24%, transparent),
+    inset 0 1px 0 var(--liquid-specular);
 }
 
 :root[data-material="liquid-glass"][data-color-scheme="light"]
@@ -1191,9 +1215,9 @@
   button.is-active,
 :root[data-material="liquid-glass"][data-color-scheme="light"]
   .toolbar-button.is-active {
-  border-color: #0f6b5e;
-  color: #07574e;
-  background: #d4f1ec;
+  border-color: var(--liquid-selection-border);
+  color: var(--text);
+  background: var(--liquid-selection);
 }
 
 :root[data-material="liquid-glass"] .eyebrow {
@@ -1210,17 +1234,34 @@
 
 :root[data-material="liquid-glass"]
   :where(.primary-button, .choose-workspace-button) {
-  border-color: color-mix(in srgb, var(--green) 72%, var(--liquid-rim));
-  color: #061d18;
+  border-color: color-mix(in srgb, var(--liquid-accent) 76%, white);
+  color: var(--liquid-accent-foreground);
   background:
     linear-gradient(
-      145deg,
-      color-mix(in srgb, var(--green) 72%, white),
-      var(--green-strong)
+      180deg,
+      color-mix(in srgb, var(--liquid-accent) 78%, white),
+      var(--liquid-accent)
     );
   box-shadow:
-    0 10px 28px color-mix(in srgb, var(--green) 22%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.48);
+    0 8px 22px color-mix(in srgb, var(--liquid-accent) 24%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}
+
+:root[data-material="liquid-glass"]
+  :where(.primary-button, .choose-workspace-button):disabled {
+  border-color: var(--material-border);
+  color: var(--text-muted);
+  background: var(--material-control);
+  box-shadow: none;
+}
+
+:root[data-material="liquid-glass"] .quick-open__result.is-active {
+  border-color: color-mix(in srgb, var(--liquid-accent) 58%, var(--liquid-rim));
+  color: var(--liquid-accent-foreground);
+  background: var(--liquid-accent);
+  box-shadow:
+    0 5px 16px color-mix(in srgb, var(--liquid-accent) 22%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 :root[data-material="liquid-glass"]
@@ -1271,10 +1312,16 @@
   padding: 3px;
   border: 1px solid var(--liquid-rim);
   background:
-    linear-gradient(135deg, var(--liquid-specular), transparent 42%),
+    linear-gradient(
+      125deg,
+      var(--liquid-specular),
+      transparent 40%,
+      var(--liquid-spectrum-cool) 72%,
+      transparent
+    ),
     var(--liquid-glass-fill);
   box-shadow:
-    0 8px 24px color-mix(in srgb, var(--shadow) 24%, transparent),
+    0 6px 20px color-mix(in srgb, var(--shadow) 20%, transparent),
     inset 0 1px 0 var(--liquid-specular);
 }
 
@@ -1288,6 +1335,8 @@
 :root[data-material="liquid-glass"] .filter-strip button {
   min-width: 0;
   flex: 1 1 0;
+  padding-right: 2px;
+  padding-left: 2px;
 }
 
 :root[data-material="liquid-glass"] .context-tabs button,
@@ -1315,22 +1364,22 @@
 }
 
 :root[data-material="liquid-glass"]
-  :where(.context-tabs, .filter-strip, .commit-scope)
+  :is(.context-tabs, .filter-strip, .commit-scope)
   button.is-active {
-  border-color: color-mix(in srgb, var(--green) 42%, var(--liquid-rim));
-  color: var(--green);
-  background: color-mix(in srgb, var(--green) 15%, var(--liquid-content-soft));
+  border-color: var(--liquid-selection-border);
+  color: var(--text);
+  background: var(--liquid-selection);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--green) 20%, white),
-    0 2px 8px color-mix(in srgb, var(--green) 10%, transparent);
+    inset 0 1px 0 var(--liquid-specular),
+    0 2px 8px color-mix(in srgb, var(--shadow) 20%, transparent);
 }
 
 :root[data-material="liquid-glass"][data-color-scheme="light"]
-  :where(.context-tabs, .filter-strip, .commit-scope)
+  :is(.context-tabs, .filter-strip, .commit-scope)
   button.is-active {
-  border-color: color-mix(in srgb, #0f6b5e 46%, var(--liquid-rim));
-  color: #07574e;
-  background: color-mix(in srgb, #8edfd1 34%, var(--liquid-content-soft));
+  border-color: var(--liquid-selection-border);
+  color: var(--text);
+  background: var(--liquid-selection);
 }
 
 /* Neumorphism keeps one matte material and communicates interaction by depth. */

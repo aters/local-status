@@ -105,131 +105,147 @@
 }
 
 :root[data-theme="liquid-glass"][data-color-scheme="light"] {
-  --bg: #e7edf5;
-  --surface-0: #f7f9fc;
-  --surface-1: #edf2f8;
-  --surface-2: #e2e9f2;
-  --surface-3: #d6e0eb;
-  --line: rgba(42, 61, 83, 0.2);
-  --line-soft: rgba(42, 61, 83, 0.11);
-  --text: #172033;
-  --text-soft: #344258;
-  --text-muted: #5c6b7f;
-  --green: #147d6e;
-  --green-strong: #0f6b5e;
-  --green-deep: #0a5148;
-  --teal: #147982;
-  --blue: #1768a6;
-  --coral: #b93646;
+  --bg: #ececee;
+  --surface-0: #f5f5f7;
+  --surface-1: #eeeef1;
+  --surface-2: #e3e3e7;
+  --surface-3: #d5d5da;
+  --line: rgba(60, 60, 67, 0.18);
+  --line-soft: rgba(60, 60, 67, 0.1);
+  --text: #1d1d1f;
+  --text-soft: #3a3a3c;
+  --text-muted: #626267;
+  --green: #0068d8;
+  --green-strong: #005fc7;
+  --green-deep: #004f9f;
+  --teal: #007aff;
+  --blue: #007aff;
+  --coral: #d70015;
   --amber: #806000;
-  --shadow: 0 24px 64px rgba(49, 67, 91, 0.18);
-  --material-canvas: #e7edf5;
-  --material-panel: rgba(248, 251, 255, 0.56);
-  --material-panel-strong: rgba(248, 251, 255, 0.82);
-  --material-control: rgba(255, 255, 255, 0.42);
-  --material-control-hover: rgba(255, 255, 255, 0.68);
-  --material-control-active: rgba(193, 236, 227, 0.64);
-  --material-inset: #f7f9fc;
-  --material-code: #f7f9fc;
-  --material-border: rgba(255, 255, 255, 0.7);
-  --material-border-strong: rgba(15, 107, 94, 0.56);
-  --material-overlay: rgba(41, 53, 71, 0.3);
+  --shadow: 0 24px 64px rgba(34, 34, 38, 0.16);
+  --material-canvas: #ececee;
+  --material-panel: rgba(255, 255, 255, 0.38);
+  --material-panel-strong: rgba(255, 255, 255, 0.68);
+  --material-control: rgba(255, 255, 255, 0.28);
+  --material-control-hover: rgba(255, 255, 255, 0.54);
+  --material-control-active: rgba(255, 255, 255, 0.72);
+  --material-inset: #f5f5f7;
+  --material-code: #f5f5f7;
+  --material-border: rgba(255, 255, 255, 0.64);
+  --material-border-strong: rgba(255, 255, 255, 0.92);
+  --material-overlay: rgba(28, 28, 30, 0.28);
   --material-panel-shadow:
-    0 20px 56px rgba(44, 61, 82, 0.18),
-    0 3px 10px rgba(44, 61, 82, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    0 22px 58px rgba(28, 28, 30, 0.15),
+    0 3px 12px rgba(28, 28, 30, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.42);
   --material-control-shadow:
-    0 6px 18px rgba(54, 72, 94, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.75);
+    0 5px 16px rgba(28, 28, 30, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
   --material-pressed-shadow:
-    inset 0 2px 5px rgba(50, 67, 88, 0.16),
-    inset 0 0 0 1px rgba(15, 107, 94, 0.2);
-  --material-inset-shadow: inset 0 1px 3px rgba(46, 64, 86, 0.1);
+    inset 0 2px 6px rgba(28, 28, 30, 0.16),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.36);
+  --material-inset-shadow: inset 0 1px 3px rgba(28, 28, 30, 0.09);
   --material-radius-panel: 24px;
   --material-radius-control: 999px;
-  --material-blur: 28px;
-  --liquid-glass-fill: rgba(248, 251, 255, 0.54);
-  --liquid-glass-thick: rgba(248, 251, 255, 0.78);
-  --liquid-content: #f7f9fc;
-  --liquid-content-soft: #edf2f8;
-  --liquid-rim: rgba(255, 255, 255, 0.78);
-  --liquid-specular: rgba(255, 255, 255, 0.62);
-  --liquid-refract: rgba(95, 209, 196, 0.18);
-  --liquid-scroll-edge: rgba(231, 237, 245, 0.94);
+  --material-blur: 34px;
+  --liquid-glass-fill: rgba(255, 255, 255, 0.34);
+  --liquid-glass-thick: #f8f8fa;
+  --liquid-content: #f5f5f7;
+  --liquid-content-soft: #eeeef1;
+  --liquid-rim: rgba(255, 255, 255, 0.72);
+  --liquid-specular: rgba(255, 255, 255, 0.84);
+  --liquid-refract: rgba(255, 255, 255, 0.3);
+  --liquid-spectrum-warm: rgba(255, 181, 204, 0.1);
+  --liquid-spectrum-cool: rgba(165, 188, 255, 0.08);
+  --liquid-selection: rgba(255, 255, 255, 0.72);
+  --liquid-selection-border: rgba(255, 255, 255, 0.94);
+  --liquid-accent: #0068d8;
+  --liquid-accent-foreground: #ffffff;
+  --liquid-accent-soft: rgba(0, 122, 255, 0.14);
+  --liquid-scroll-edge: rgba(236, 236, 238, 0.94);
   color: var(--text);
   background: var(--bg);
 }
 
 :root[data-theme="liquid-glass"][data-color-scheme="dark"] {
-  --bg: #0b1018;
-  --surface-0: #111827;
-  --surface-1: #172131;
-  --surface-2: #1d2a3c;
-  --surface-3: #26364a;
-  --line: rgba(190, 207, 225, 0.2);
-  --line-soft: rgba(190, 207, 225, 0.11);
-  --text: #f4f7fb;
-  --text-soft: #c7d2df;
-  --text-muted: #93a2b5;
-  --green: #66e0c2;
-  --green-strong: #45c7a7;
-  --green-deep: #21866f;
-  --teal: #6fd3d9;
-  --blue: #78bdf2;
-  --coral: #f08491;
-  --amber: #e6c575;
-  --shadow: 0 26px 72px rgba(0, 4, 12, 0.42);
-  --material-canvas: #0b1018;
-  --material-panel: rgba(25, 35, 50, 0.54);
-  --material-panel-strong: rgba(25, 35, 50, 0.8);
-  --material-control: rgba(46, 62, 82, 0.42);
-  --material-control-hover: rgba(59, 78, 101, 0.62);
-  --material-control-active: rgba(41, 106, 91, 0.58);
-  --material-inset: #111827;
-  --material-code: #111827;
-  --material-border: rgba(218, 231, 244, 0.2);
-  --material-border-strong: rgba(102, 224, 194, 0.56);
-  --material-overlay: rgba(2, 6, 13, 0.58);
+  --bg: #101012;
+  --surface-0: #151517;
+  --surface-1: #1d1d20;
+  --surface-2: #28282b;
+  --surface-3: #343438;
+  --line: rgba(235, 235, 245, 0.16);
+  --line-soft: rgba(235, 235, 245, 0.08);
+  --text: #f5f5f7;
+  --text-soft: #d1d1d6;
+  --text-muted: #98989d;
+  --green: #0a84ff;
+  --green-strong: #007aff;
+  --green-deep: #005ec4;
+  --teal: #0a84ff;
+  --blue: #0a84ff;
+  --coral: #ff453a;
+  --amber: #ffd60a;
+  --shadow: 0 26px 72px rgba(0, 0, 0, 0.5);
+  --material-canvas: #101012;
+  --material-panel: rgba(255, 255, 255, 0.07);
+  --material-panel-strong: rgba(255, 255, 255, 0.11);
+  --material-control: rgba(255, 255, 255, 0.065);
+  --material-control-hover: rgba(255, 255, 255, 0.12);
+  --material-control-active: rgba(255, 255, 255, 0.16);
+  --material-inset: #151517;
+  --material-code: #151517;
+  --material-border: rgba(255, 255, 255, 0.14);
+  --material-border-strong: rgba(255, 255, 255, 0.28);
+  --material-overlay: rgba(0, 0, 0, 0.56);
   --material-panel-shadow:
-    0 24px 64px rgba(0, 3, 10, 0.38),
-    0 3px 12px rgba(0, 3, 10, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    0 24px 68px rgba(0, 0, 0, 0.46),
+    0 3px 12px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.07);
   --material-control-shadow:
-    0 7px 20px rgba(0, 4, 12, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.11);
+    0 6px 18px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.13);
   --material-pressed-shadow:
-    inset 0 2px 6px rgba(0, 3, 10, 0.4),
-    inset 0 0 0 1px rgba(102, 224, 194, 0.2);
-  --material-inset-shadow: inset 0 1px 4px rgba(0, 3, 10, 0.34);
+    inset 0 2px 7px rgba(0, 0, 0, 0.46),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+  --material-inset-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.36);
   --material-radius-panel: 24px;
   --material-radius-control: 999px;
-  --material-blur: 28px;
-  --liquid-glass-fill: rgba(25, 35, 50, 0.52);
-  --liquid-glass-thick: rgba(25, 35, 50, 0.78);
-  --liquid-content: #111827;
-  --liquid-content-soft: #172131;
-  --liquid-rim: rgba(229, 239, 249, 0.24);
-  --liquid-specular: rgba(255, 255, 255, 0.2);
-  --liquid-refract: rgba(102, 224, 194, 0.18);
-  --liquid-scroll-edge: rgba(11, 16, 24, 0.94);
+  --material-blur: 34px;
+  --liquid-glass-fill: rgba(255, 255, 255, 0.075);
+  --liquid-glass-thick: #232326;
+  --liquid-content: #151517;
+  --liquid-content-soft: #1d1d20;
+  --liquid-rim: rgba(255, 255, 255, 0.2);
+  --liquid-specular: rgba(255, 255, 255, 0.18);
+  --liquid-refract: rgba(255, 255, 255, 0.11);
+  --liquid-spectrum-warm: rgba(255, 126, 168, 0.07);
+  --liquid-spectrum-cool: rgba(131, 157, 255, 0.06);
+  --liquid-selection: rgba(255, 255, 255, 0.13);
+  --liquid-selection-border: rgba(255, 255, 255, 0.28);
+  --liquid-accent: #0a84ff;
+  --liquid-accent-foreground: #050506;
+  --liquid-accent-soft: rgba(10, 132, 255, 0.18);
+  --liquid-scroll-edge: rgba(16, 16, 18, 0.94);
   color: var(--text);
   background: var(--bg);
 }
 
 :root[data-theme="liquid-glass"][data-color-scheme="light"] body {
   background:
-    radial-gradient(circle at 10% -5%, rgba(255, 255, 255, 0.98), transparent 34rem),
-    radial-gradient(circle at 88% 8%, rgba(126, 174, 224, 0.24), transparent 32rem),
-    radial-gradient(circle at 70% 92%, rgba(81, 202, 184, 0.17), transparent 30rem),
-    linear-gradient(145deg, #edf3fa, #dce5ef);
+    radial-gradient(circle at 8% -8%, rgba(255, 255, 255, 0.98), transparent 34rem),
+    radial-gradient(circle at 92% 5%, rgba(244, 204, 217, 0.22), transparent 32rem),
+    radial-gradient(circle at 68% 105%, rgba(204, 194, 229, 0.2), transparent 34rem),
+    linear-gradient(145deg, #f0f0f2, #dedee2);
 }
 
 :root[data-theme="liquid-glass"][data-color-scheme="dark"] body {
   background:
-    radial-gradient(circle at 10% -8%, rgba(72, 113, 162, 0.22), transparent 32rem),
-    radial-gradient(circle at 88% 8%, rgba(68, 171, 157, 0.14), transparent 30rem),
-    radial-gradient(circle at 72% 100%, rgba(100, 82, 163, 0.13), transparent 32rem),
-    linear-gradient(145deg, #0d1420, #080d14 74%);
+    radial-gradient(circle at 9% -8%, rgba(255, 255, 255, 0.08), transparent 32rem),
+    radial-gradient(circle at 90% 8%, rgba(111, 84, 143, 0.12), transparent 30rem),
+    radial-gradient(circle at 72% 105%, rgba(133, 73, 91, 0.08), transparent 34rem),
+    linear-gradient(145deg, #151517, #080809 74%);
 }
 
 .theme-preview--glass {
@@ -272,10 +288,11 @@
 
 .theme-preview--liquid-glass {
   position: relative;
-  border-color: rgba(126, 147, 173, 0.34);
+  border-color: rgba(118, 118, 126, 0.3);
   background:
-    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.9), transparent 38%),
-    linear-gradient(90deg, #dce7f2 0 50%, #0d1622 50% 100%);
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.94), transparent 38%),
+    radial-gradient(circle at 84% 18%, rgba(214, 182, 218, 0.28), transparent 36%),
+    linear-gradient(90deg, #e7e7ea 0 50%, #111113 50% 100%);
 }
 
 .theme-preview--liquid-glass::after {
@@ -286,18 +303,18 @@
   height: 8px;
   border: 1px solid rgba(255, 255, 255, 0.55);
   border-radius: 999px;
-  background: rgba(102, 224, 194, 0.58);
+  background: #0a84ff;
   box-shadow:
-    0 4px 12px rgba(18, 49, 61, 0.24),
+    0 4px 12px rgba(0, 64, 140, 0.24),
     inset 0 1px 0 rgba(255, 255, 255, 0.5);
   content: "";
 }
 
 .theme-preview--liquid-glass span {
   border: 1px solid rgba(255, 255, 255, 0.56);
-  background: rgba(244, 249, 254, 0.42);
+  background: rgba(255, 255, 255, 0.36);
   box-shadow:
-    0 5px 16px rgba(19, 33, 50, 0.18),
+    0 5px 16px rgba(28, 28, 30, 0.16),
     inset 0 1px 0 rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(5px) saturate(130%);
 }
@@ -307,9 +324,9 @@
 }
 
 .theme-preview--liquid-glass span:last-child {
-  border-color: rgba(107, 125, 148, 0.28);
-  background: linear-gradient(90deg, #f7f9fc 0 50%, #111827 50% 100%);
-  box-shadow: inset 0 0 0 1px rgba(127, 145, 166, 0.12);
+  border-color: rgba(118, 118, 126, 0.26);
+  background: linear-gradient(90deg, #f5f5f7 0 50%, #151517 50% 100%);
+  box-shadow: inset 0 0 0 1px rgba(118, 118, 126, 0.1);
   backdrop-filter: none;
 }
 
