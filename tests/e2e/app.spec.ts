@@ -12,6 +12,7 @@ let fixtureRoot: string;
 let fixtureParent: string;
 let userData: string;
 let codexExecutable: string;
+let githubExecutable: string;
 let changedRepository: string;
 let desktopProcess: ChildProcess | null = null;
 
@@ -22,6 +23,7 @@ async function launchDesktop(port: number, workspace: string | null = fixtureRoo
     LOCAL_STATUS_TEST_USER_DATA: userData,
     LOCAL_STATUS_E2E_PORT: String(port),
     LOCAL_STATUS_CODEX_PATH: codexExecutable,
+    LOCAL_STATUS_GH_PATH: githubExecutable,
     LOCAL_STATUS_TEST_ACCEPT_AI_DISCLOSURE: "1",
   };
   if (workspace) {
@@ -67,6 +69,23 @@ async function launchDesktop(port: number, workspace: string | null = fixtureRoo
   throw new Error(`Electron did not expose its test endpoint:\n${stderr}`);
 }
 
+async function stopDesktop() {
+  if (!desktopProcess || desktopProcess.exitCode !== null) {
+    desktopProcess = null;
+    return;
+  }
+  const processToStop = desktopProcess;
+  processToStop.kill("SIGTERM");
+  await new Promise<void>((resolvePromise) => {
+    const timeout = setTimeout(resolvePromise, 3_000);
+    processToStop.once("exit", () => {
+      clearTimeout(timeout);
+      resolvePromise();
+    });
+  });
+  desktopProcess = null;
+}
+
 function git(directory: string, ...args: string[]) {
   return execFileSync("git", ["-C", directory, ...args], {
     encoding: "utf8",
@@ -103,6 +122,7 @@ test.beforeEach(() => {
   mkdirSync(fixtureRoot);
   userData = mkdtempSync(join(tmpdir(), "local-status-e2e-user-data-"));
   codexExecutable = join(fixtureParent, "codex");
+  githubExecutable = join(fixtureParent, "gh");
   writeFileSync(
     codexExecutable,
     `#!/usr/bin/env node
@@ -121,6 +141,51 @@ if (args[0] === "--version") {
     { mode: 0o755 },
   );
   chmodSync(codexExecutable, 0o755);
+  writeFileSync(
+    githubExecutable,
+    `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === "--version") {
+  console.log("gh version 9.9.9");
+} else if (args[0] === "auth" && args[1] === "status") {
+  console.log(JSON.stringify({
+    hosts: {
+      "github.com": [{ active: true, state: "success", login: "dmytro" }]
+    }
+  }));
+} else if (args[0] === "repo" && args[1] === "view") {
+  const repository = process.cwd().split("/").pop();
+  console.log(JSON.stringify({
+    nameWithOwner: "fixture/" + repository,
+    url: "https://github.com/fixture/" + repository
+  }));
+} else if (args[0] === "search" && args[1] === "prs") {
+  const authored = [{
+    author: { login: "dmytro" },
+    isDraft: false,
+    number: 12,
+    repository: { nameWithOwner: "fixture/changed-web" },
+    state: "open",
+    title: "Refine repository workspace materials",
+    updatedAt: "2026-07-29T08:30:00.000Z",
+    url: "https://github.com/fixture/changed-web/pull/12"
+  }];
+  const reviews = [{
+    author: { login: "octocat" },
+    isDraft: true,
+    number: 7,
+    repository: { nameWithOwner: "fixture/clean-api" },
+    state: "open",
+    title: "Document the local API workflow",
+    updatedAt: "2026-07-28T06:15:00.000Z",
+    url: "https://github.com/fixture/clean-api/pull/7"
+  }];
+  console.log(JSON.stringify(args.includes("--author") ? authored : reviews));
+}
+`,
+    { mode: 0o755 },
+  );
+  chmodSync(githubExecutable, 0o755);
   const clean = join(fixtureRoot, "clean-api");
   changedRepository = join(fixtureRoot, "changed-web");
   execFileSync("git", ["init", "-b", "main", clean]);
@@ -166,10 +231,7 @@ if (args[0] === "--version") {
 });
 
 test.afterEach(async () => {
-  if (desktopProcess && desktopProcess.exitCode === null) {
-    desktopProcess.kill("SIGTERM");
-  }
-  desktopProcess = null;
+  await stopDesktop();
   await Promise.all([
     rm(fixtureParent, { recursive: true, force: true }),
     rm(userData, { recursive: true, force: true }),
@@ -319,6 +381,308 @@ test("renders a cohesive dark theme across repository surfaces", async ({
     path: testInfo.outputPath("dark-diff.png"),
     animations: "disabled",
   });
+  await browser.close();
+});
+
+test("renders and persists the Glass and Neumorphic theme systems", async ({
+}, testInfo) => {
+  test.setTimeout(90_000);
+  let browser = await launchDesktop(9337);
+  let window = browser.contexts()[0].pages()[0];
+  await window.setViewportSize({ width: 1440, height: 900 });
+
+  await window.getByRole("button", { name: "Settings" }).click();
+  await expect(window.getByRole("radio")).toHaveCount(5);
+  await window.getByRole("radio", { name: /Glass/ }).click();
+  await expect(window.locator("html")).toHaveAttribute("data-theme", "glass");
+  await expect(window.locator("html")).toHaveAttribute("data-material", "glass");
+  await expect(window.locator("html")).toHaveAttribute("data-layout", "floating");
+  expect(await window.locator("html").evaluate((element) => element.style.colorScheme))
+    .toBe("dark");
+  await window.screenshot({
+    path: testInfo.outputPath("glass-settings.png"),
+    animations: "disabled",
+  });
+  const themeCardRows = await window.locator(".theme-card").evaluateAll((cards) =>
+    cards.map((card) => Math.round(card.getBoundingClientRect().top)),
+  );
+  expect(new Set(themeCardRows).size).toBe(1);
+
+  await window.getByRole("button", { name: "Repositories" }).click();
+  await window.getByText("changed-web").first().click();
+  await expect(window.getByRole("heading", { name: "changed-web" })).toBeVisible();
+  const glassLayout = await window.evaluate(() => {
+    const style = (selector: string) =>
+      getComputedStyle(document.querySelector<HTMLElement>(selector)!);
+    const panels = [
+      ".repo-panel",
+      ".context-panel",
+      ".viewer-panel",
+    ].map((selector) =>
+      document.querySelector<HTMLElement>(selector)!.getBoundingClientRect(),
+    );
+    return {
+      headerRadius: style(".app-header").borderRadius,
+      panelRadius: style(".repo-panel").borderRadius,
+      panelBackground: style(".repo-panel").backgroundColor,
+      panelGaps: [panels[1].left - panels[0].right, panels[2].left - panels[1].right],
+      viewport: window.innerWidth,
+      document: document.documentElement.scrollWidth,
+    };
+  });
+  expect(Number.parseFloat(glassLayout.headerRadius)).toBeGreaterThan(0);
+  expect(Number.parseFloat(glassLayout.panelRadius)).toBeGreaterThan(0);
+  expect(glassLayout.panelBackground).toMatch(/^rgba\(/);
+  expect(glassLayout.panelGaps.every((gap) => gap > 0)).toBe(true);
+  expect(glassLayout.document).toBe(glassLayout.viewport);
+  const glassContextMaterials = await window.evaluate(() => {
+    const selectors = [
+      ".repository-header",
+      ".context-tabs",
+      ".context-tabs button.is-active",
+      ".commit-toolbar",
+      ".context-search",
+      ".context-content",
+      ".change-group__header",
+      ".change-action",
+    ];
+    return selectors.map((selector) => {
+      const style = getComputedStyle(
+        document.querySelector<HTMLElement>(selector)!,
+      );
+      return {
+        selector,
+        radius: Number.parseFloat(style.borderRadius),
+        border: Number.parseFloat(style.borderTopWidth),
+        background: style.backgroundColor,
+        shadow: style.boxShadow,
+      };
+    });
+  });
+  for (const surface of glassContextMaterials) {
+    expect(surface.radius, surface.selector).toBeGreaterThan(0);
+    expect(surface.border, surface.selector).toBeGreaterThan(0);
+    expect(surface.background, surface.selector).not.toBe("rgba(0, 0, 0, 0)");
+  }
+  expect(
+    glassContextMaterials.find(({ selector }) => selector === ".context-tabs")
+      ?.shadow,
+  ).toContain("inset");
+  await window.screenshot({
+    path: testInfo.outputPath("glass-workspace.png"),
+    animations: "disabled",
+  });
+
+  await window.locator(".workspace-switcher").click();
+  await expect(
+    window.getByRole("menu", { name: "Switch workspace" }),
+  ).toBeVisible();
+  await window.screenshot({
+    path: testInfo.outputPath("glass-workspace-menu.png"),
+    animations: "disabled",
+  });
+  await window.keyboard.press("Escape");
+
+  await window.getByRole("button", { name: "Run a package script" }).click();
+  await expect(
+    window.getByRole("menu", { name: "Package scripts" }),
+  ).toBeVisible();
+  await window.screenshot({
+    path: testInfo.outputPath("glass-script-picker.png"),
+    animations: "disabled",
+  });
+  await window.getByRole("button", { name: "Run a package script" }).click();
+
+  await window.locator(".repository-header__branch").click();
+  await expect(
+    window.getByRole("dialog", { name: "Switch branch for changed-web" }),
+  ).toBeVisible();
+  await window.screenshot({
+    path: testInfo.outputPath("glass-branch-picker.png"),
+    animations: "disabled",
+  });
+  await window.keyboard.press("Escape");
+
+  await window.getByRole("button", { name: "Stage README.md" }).click();
+  await window.getByRole("button", { name: "Commit", exact: true }).click();
+  const glassCommitDialog = window.getByRole("dialog", {
+    name: "Commit staged changes",
+  });
+  await expect(glassCommitDialog).toBeVisible();
+  await window.screenshot({
+    path: testInfo.outputPath("glass-commit-modal.png"),
+    animations: "disabled",
+  });
+  await glassCommitDialog
+    .getByRole("button", { name: "Close commit window" })
+    .click();
+  await window.getByRole("button", { name: "Unstage README.md" }).click();
+
+  await window.keyboard.press("ControlOrMeta+P");
+  await expect(window.getByRole("dialog", { name: "Quick Open" })).toBeVisible();
+  await window.screenshot({
+    path: testInfo.outputPath("glass-quick-open.png"),
+    animations: "disabled",
+  });
+  await window.keyboard.press("Escape");
+
+  await window.getByRole("button", { name: "Settings" }).click();
+  await window.getByRole("radio", { name: /Neumorphic/ }).click();
+  await expect(window.locator("html")).toHaveAttribute(
+    "data-theme",
+    "neumorphic",
+  );
+  await expect(window.locator("html")).toHaveAttribute(
+    "data-material",
+    "neumorphic",
+  );
+  await expect(window.locator("html")).toHaveAttribute(
+    "data-layout",
+    "sculpted",
+  );
+  await window.screenshot({
+    path: testInfo.outputPath("neumorphic-settings.png"),
+    animations: "disabled",
+  });
+
+  await window.getByRole("button", { name: "Repositories" }).click();
+  await window.getByText("changed-web").first().click();
+  const neumorphicLayout = await window.evaluate(() => {
+    const workspace = getComputedStyle(
+      document.querySelector<HTMLElement>(".repository-workspace")!,
+    );
+    const viewer = getComputedStyle(
+      document.querySelector<HTMLElement>(".viewer-panel")!,
+    );
+    return {
+      workspaceShadow: workspace.boxShadow,
+      viewerShadow: viewer.boxShadow,
+      viewport: window.innerWidth,
+      document: document.documentElement.scrollWidth,
+    };
+  });
+  expect(neumorphicLayout.workspaceShadow).not.toBe("none");
+  expect(neumorphicLayout.viewerShadow).toContain("inset");
+  expect(neumorphicLayout.document).toBe(neumorphicLayout.viewport);
+  const neumorphicContextMaterials = await window.evaluate(() => {
+    const style = (selector: string) =>
+      getComputedStyle(document.querySelector<HTMLElement>(selector)!);
+    return {
+      headerShadow: style(".repository-header").boxShadow,
+      tabsShadow: style(".context-tabs").boxShadow,
+      activeTabShadow: style(".context-tabs button.is-active").boxShadow,
+      contentShadow: style(".context-content").boxShadow,
+      groupShadow: style(".change-group__header").boxShadow,
+      actionShadow: style(".change-action").boxShadow,
+      activeTabBorder: style(".context-tabs button.is-active").borderTopColor,
+    };
+  });
+  expect(neumorphicContextMaterials.headerShadow).not.toBe("none");
+  expect(neumorphicContextMaterials.tabsShadow).toContain("inset");
+  expect(neumorphicContextMaterials.activeTabShadow).toContain("inset");
+  expect(neumorphicContextMaterials.contentShadow).toContain("inset");
+  expect(neumorphicContextMaterials.groupShadow).not.toBe("none");
+  expect(neumorphicContextMaterials.actionShadow).not.toBe("none");
+  expect(neumorphicContextMaterials.activeTabBorder).not.toBe(
+    "rgba(0, 0, 0, 0)",
+  );
+  await window.screenshot({
+    path: testInfo.outputPath("neumorphic-workspace.png"),
+    animations: "disabled",
+  });
+  await window.locator('.change-row__select[title="README.md"]').click();
+  await expect(window.locator(".monaco-diff-editor")).toBeVisible();
+  await expect(
+    window.locator(".editor.original .lines-content.monaco-editor-background"),
+  ).toHaveCSS("background-color", "rgb(16, 25, 34)");
+  await window.screenshot({
+    path: testInfo.outputPath("neumorphic-diff.png"),
+    animations: "disabled",
+  });
+
+  await window.getByRole("button", { name: "Stage README.md" }).click();
+  await window.getByRole("button", { name: "Commit", exact: true }).click();
+  const neumorphicCommitDialog = window.getByRole("dialog", {
+    name: "Commit staged changes",
+  });
+  await expect(neumorphicCommitDialog).toBeVisible();
+  const aiSettingsButton = neumorphicCommitDialog.getByRole("button", {
+    name: "AI draft settings",
+  });
+  await expect(aiSettingsButton).toBeEnabled();
+  await aiSettingsButton.click();
+  await expect(
+    neumorphicCommitDialog.getByRole("dialog", {
+      name: "AI draft settings",
+    }),
+  ).toBeVisible();
+  await window.screenshot({
+    path: testInfo.outputPath("neumorphic-commit-modal.png"),
+    animations: "disabled",
+  });
+  await aiSettingsButton.click();
+  await neumorphicCommitDialog
+    .getByRole("button", { name: "Close commit window" })
+    .click();
+  await window.getByRole("button", { name: "Unstage README.md" }).click();
+
+  await window.getByRole("button", { name: "Pull Requests" }).click();
+  await expect(window.locator(".pull-requests-content")).toBeVisible();
+  await expect(window.locator(".pull-request-sections")).toBeVisible();
+  await expect(window.locator(".pull-request-row")).toHaveCount(2);
+  await window.screenshot({
+    path: testInfo.outputPath("neumorphic-pull-requests.png"),
+    animations: "disabled",
+  });
+
+  await window.getByRole("button", { name: "Services" }).click();
+  await expect(window.locator(".services-workspace")).toBeVisible();
+  await window.screenshot({
+    path: testInfo.outputPath("neumorphic-services.png"),
+    animations: "disabled",
+  });
+
+  for (const size of [
+    { width: 1180, height: 760 },
+    { width: 900, height: 700 },
+    { width: 390, height: 844 },
+  ]) {
+    await window.setViewportSize(size);
+    await expect
+      .poll(() =>
+        window.evaluate(
+          () => document.documentElement.scrollWidth - window.innerWidth,
+        ),
+      )
+      .toBeLessThanOrEqual(0);
+    await window.getByRole("button", { name: "Repositories" }).click();
+    await expect
+      .poll(() =>
+        window.evaluate(
+          () => document.documentElement.scrollWidth - window.innerWidth,
+        ),
+      )
+      .toBeLessThanOrEqual(0);
+    await window.getByRole("button", { name: "Services" }).click();
+  }
+  await window.screenshot({
+    path: testInfo.outputPath("neumorphic-mobile-services.png"),
+    animations: "disabled",
+  });
+
+  await browser.close();
+  await stopDesktop();
+
+  browser = await launchDesktop(9338);
+  window = browser.contexts()[0].pages()[0];
+  await expect(window.locator("html")).toHaveAttribute(
+    "data-theme",
+    "neumorphic",
+  );
+  await expect(window.locator("html")).toHaveAttribute(
+    "data-layout",
+    "sculpted",
+  );
   await browser.close();
 });
 

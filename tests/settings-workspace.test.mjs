@@ -27,6 +27,43 @@ afterEach(async () => {
 });
 
 describe("SettingsStore", () => {
+  it("persists all registered themes and rejects unknown values", async () => {
+    const directory = temporaryDirectory("local-status-themes-");
+    const settingsPath = join(directory, "settings.json");
+    const store = new SettingsStore(settingsPath);
+    await store.load();
+
+    await expect(store.setTheme("glass")).resolves.toEqual({ theme: "glass" });
+    await expect(store.setTheme("neumorphic")).resolves.toEqual({
+      theme: "neumorphic",
+    });
+    await expect(store.setTheme("unknown")).rejects.toThrow("Invalid theme.");
+
+    const restored = new SettingsStore(settingsPath);
+    await restored.load();
+    expect(restored.preferences()).toEqual({ theme: "neumorphic" });
+  });
+
+  it("falls back to Green when a saved theme is unknown", async () => {
+    const directory = temporaryDirectory("local-status-invalid-theme-");
+    const settingsPath = join(directory, "settings.json");
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        version: 5,
+        lastWorkspacePath: null,
+        recentWorkspaces: [],
+        profiles: {},
+        theme: "future-theme",
+      }),
+    );
+    const store = new SettingsStore(settingsPath);
+
+    await store.load();
+
+    expect(store.preferences()).toEqual({ theme: "green" });
+  });
+
   it("persists recent workspaces and profiles without storing environment values", async () => {
     const directory = temporaryDirectory("local-status-settings-");
     const settingsPath = join(directory, "settings.json");

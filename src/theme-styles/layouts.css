@@ -1,0 +1,282 @@
+.theme-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.settings-heading,
+.settings-section {
+  width: min(1180px, 100%);
+}
+
+:root:is([data-layout="floating"], [data-layout="sculpted"]) .app-shell {
+  gap: 10px;
+  padding: 10px;
+  background: transparent;
+}
+
+:root:is([data-layout="floating"], [data-layout="sculpted"]) .app-header {
+  height: 56px;
+  flex-basis: 56px;
+  border: 1px solid var(--material-border);
+  border-radius: var(--material-radius-panel);
+}
+
+:root:is([data-layout="floating"], [data-layout="sculpted"])
+  :where(
+    .workspace-overview,
+    .repo-panel,
+    .context-panel,
+    .viewer-panel,
+    .services-toolbar,
+    .profile-editor,
+    .session-panel,
+    .listener-sidebar,
+    .terminal-stage,
+    .pull-requests-toolbar
+  ) {
+  overflow: hidden;
+  border: 1px solid var(--material-border);
+  border-radius: var(--material-radius-panel);
+}
+
+:root:is([data-layout="floating"], [data-layout="sculpted"])
+  :where(.repository-workspace, .services-workspace, .pull-requests-workspace) {
+  gap: 10px;
+  background: transparent;
+}
+
+:root:is([data-layout="floating"], [data-layout="sculpted"]) .workspace-panels {
+  gap: 8px;
+  background: transparent;
+}
+
+:root:is([data-layout="floating"], [data-layout="sculpted"]) .resize-handle {
+  overflow: visible;
+  border-radius: 999px;
+  background: transparent;
+}
+
+:root:is([data-layout="floating"], [data-layout="sculpted"])
+  .resize-handle::before {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 2px;
+  width: 1px;
+  border-radius: 999px;
+  background: var(--material-border);
+  content: "";
+}
+
+:root:is([data-layout="floating"], [data-layout="sculpted"])
+  .resize-handle:hover::before,
+:root:is([data-layout="floating"], [data-layout="sculpted"])
+  body.is-resizing
+  .resize-handle::before {
+  width: 2px;
+  background: var(--green-deep);
+}
+
+:root:is([data-layout="floating"], [data-layout="sculpted"]) .service-layout {
+  gap: 10px;
+}
+
+:root:is([data-layout="floating"], [data-layout="sculpted"])
+  .pull-requests-content {
+  padding-top: 26px;
+}
+
+:root:is([data-layout="floating"], [data-layout="sculpted"]) .settings-page {
+  border-radius: var(--material-radius-panel);
+  background: transparent;
+}
+
+/* Floating glass separates the workspace into independent panes. */
+
+:root[data-layout="floating"] .workspace-overview {
+  min-height: 76px;
+}
+
+:root[data-layout="floating"] .workspace-panels {
+  grid-template-columns:
+    var(--repo-panel-width) 4px var(--context-panel-width) 4px
+    minmax(320px, 1fr);
+}
+
+:root[data-layout="floating"] .pull-request-sections {
+  gap: 16px;
+}
+
+/* Sculpted layouts place inset work areas inside a single raised console. */
+
+:root[data-layout="sculpted"]
+  :where(.repository-workspace, .services-workspace) {
+  padding: 10px;
+  border: 1px solid var(--material-border);
+  border-radius: calc(var(--material-radius-panel) + 4px);
+  background: var(--material-panel);
+  box-shadow: var(--material-panel-shadow);
+}
+
+:root[data-layout="sculpted"] .workspace-overview {
+  min-height: 76px;
+  box-shadow: var(--material-control-shadow);
+}
+
+:root[data-layout="sculpted"] .workspace-panels {
+  padding: 8px;
+  border: 1px solid var(--material-border);
+  border-radius: var(--material-radius-panel);
+  background: var(--material-inset);
+  box-shadow: var(--material-inset-shadow);
+}
+
+:root[data-layout="sculpted"] .service-layout {
+  padding: 8px;
+  border: 1px solid var(--material-border);
+  border-radius: var(--material-radius-panel);
+  background: var(--material-inset);
+  box-shadow: var(--material-inset-shadow);
+}
+
+:root[data-layout="sculpted"] .settings-section,
+:root[data-layout="sculpted"] .pull-request-section {
+  box-shadow: var(--material-panel-shadow);
+}
+
+@media (max-width: 1180px) {
+  :root:is([data-layout="floating"], [data-layout="sculpted"])
+    .workspace-panels {
+    grid-template-columns: var(--context-panel-width) 4px minmax(320px, 1fr);
+  }
+
+  :root:is([data-layout="floating"], [data-layout="sculpted"]) .repo-panel {
+    top: 76px;
+    bottom: 10px;
+    left: 10px;
+    border: 1px solid var(--material-border);
+    border-radius: var(--material-radius-panel);
+  }
+
+  :root[data-layout="sculpted"] .repo-panel {
+    top: 86px;
+    bottom: 20px;
+    left: 20px;
+  }
+}
+
+@media (max-width: 860px) {
+  :root:is([data-layout="floating"], [data-layout="sculpted"]) .app-shell {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  :root:is([data-layout="floating"], [data-layout="sculpted"]) .repo-panel {
+    top: 72px;
+    bottom: 8px;
+    left: 8px;
+  }
+
+  :root[data-layout="sculpted"]
+    :where(.repository-workspace, .services-workspace) {
+    padding: 8px;
+  }
+
+  :root[data-layout="sculpted"] .repo-panel {
+    top: 80px;
+    bottom: 16px;
+    left: 16px;
+  }
+
+  :root:is([data-layout="floating"], [data-layout="sculpted"])
+    .workspace-panels {
+    grid-template-columns: minmax(250px, 40vw) 4px minmax(320px, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  :root:is([data-layout="floating"], [data-layout="sculpted"]) .app-shell {
+    gap: 0;
+    padding: 0;
+  }
+
+  :root:is([data-layout="floating"], [data-layout="sculpted"])
+    :where(
+      .app-header,
+      .workspace-overview,
+      .repo-panel,
+      .context-panel,
+      .viewer-panel,
+      .services-toolbar,
+      .profile-editor,
+      .session-panel,
+      .listener-sidebar,
+      .terminal-stage,
+      .pull-requests-toolbar
+    ) {
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+
+  :root:is([data-layout="floating"], [data-layout="sculpted"])
+    :where(.repository-workspace, .services-workspace, .pull-requests-workspace) {
+    gap: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  :root:is([data-layout="floating"], [data-layout="sculpted"])
+    .workspace-panels {
+    display: block;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  :root:is([data-layout="floating"], [data-layout="sculpted"]) .repo-panel {
+    top: 56px;
+    bottom: 0;
+    left: 0;
+  }
+
+  :root:is([data-layout="floating"], [data-layout="sculpted"]) .service-layout {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(120px, 28vh) minmax(0, 1fr);
+    gap: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  :root:is([data-layout="floating"], [data-layout="sculpted"])
+    .services-toolbar {
+    padding: 11px 12px;
+  }
+
+  :root:is([data-layout="floating"], [data-layout="sculpted"])
+    .service-launcher {
+    flex-wrap: wrap;
+  }
+
+  :root:is([data-layout="floating"], [data-layout="sculpted"])
+    .service-launcher
+    select {
+    flex: 1 1 120px;
+  }
+
+  :root:is([data-layout="floating"], [data-layout="sculpted"])
+    .session-panel {
+    min-width: 0;
+    border-bottom: 1px solid var(--material-border);
+  }
+
+  .theme-grid {
+    grid-template-columns: 1fr;
+  }
+}

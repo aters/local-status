@@ -1,9 +1,10 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname } from "node:path";
+import themeManifest from "../shared/themes.json" with { type: "json" };
 
 const SETTINGS_VERSION = 5;
 const MAX_RECENT_WORKSPACES = 8;
-const THEMES = new Set(["green", "dark", "light"]);
+const THEMES = new Set(Object.keys(themeManifest));
 
 function defaults() {
   return {

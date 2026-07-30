@@ -1,0 +1,143 @@
+:root[data-theme="glass"] {
+  --bg: #07111c;
+  --surface-0: #101d2a;
+  --surface-1: #142435;
+  --surface-2: #1a2d40;
+  --surface-3: #21384c;
+  --line: rgba(194, 222, 239, 0.2);
+  --line-soft: rgba(194, 222, 239, 0.12);
+  --text: #f0f7fb;
+  --text-soft: #c0d0db;
+  --text-muted: #8ea3b2;
+  --green: #7ce5c3;
+  --green-strong: #5fd1ad;
+  --green-deep: #28745f;
+  --teal: #67d9df;
+  --blue: #75c8ff;
+  --coral: #f28691;
+  --amber: #e8c47d;
+  --shadow: 0 24px 70px rgba(0, 3, 10, 0.42);
+  --material-canvas: #07111c;
+  --material-panel: rgba(15, 29, 43, 0.7);
+  --material-panel-strong: rgba(15, 29, 43, 0.88);
+  --material-control: rgba(31, 53, 72, 0.72);
+  --material-control-hover: rgba(42, 69, 91, 0.82);
+  --material-control-active: rgba(40, 91, 83, 0.72);
+  --material-inset: rgba(7, 17, 28, 0.78);
+  --material-code: #0b1622;
+  --material-border: rgba(194, 222, 239, 0.18);
+  --material-border-strong: rgba(124, 229, 195, 0.42);
+  --material-overlay: rgba(2, 8, 15, 0.58);
+  --material-panel-shadow:
+    0 24px 70px rgba(0, 3, 10, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --material-control-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  --material-pressed-shadow: inset 0 0 0 1px rgba(124, 229, 195, 0.28);
+  --material-inset-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.22);
+  --material-radius-panel: 16px;
+  --material-radius-control: 10px;
+  --material-blur: 22px;
+  color: var(--text);
+  background: var(--bg);
+}
+
+:root[data-theme="glass"] body {
+  background:
+    radial-gradient(circle at 13% 8%, rgba(55, 154, 166, 0.2), transparent 30rem),
+    radial-gradient(circle at 82% 4%, rgba(104, 83, 167, 0.18), transparent 34rem),
+    radial-gradient(circle at 74% 88%, rgba(32, 113, 120, 0.14), transparent 32rem),
+    linear-gradient(145deg, #07111c, #0b1624 48%, #09131e);
+}
+
+:root[data-theme="neumorphic"] {
+  --bg: #14212b;
+  --surface-0: #172630;
+  --surface-1: #1a2a35;
+  --surface-2: #20333f;
+  --surface-3: #263c49;
+  --line: rgba(152, 181, 196, 0.18);
+  --line-soft: rgba(152, 181, 196, 0.1);
+  --text: #edf5f7;
+  --text-soft: #bdcbd1;
+  --text-muted: #879ba5;
+  --green: #72dfbe;
+  --green-strong: #57cba8;
+  --green-deep: #286d5b;
+  --teal: #61c9ce;
+  --blue: #70b7e8;
+  --coral: #eb808b;
+  --amber: #dfbb72;
+  --shadow: 9px 9px 24px rgba(4, 10, 15, 0.48);
+  --material-canvas: #14212b;
+  --material-panel: #172630;
+  --material-panel-strong: #192a35;
+  --material-control: #1b2c37;
+  --material-control-hover: #203440;
+  --material-control-active: #182a33;
+  --material-inset: #111c24;
+  --material-code: #101922;
+  --material-border: rgba(151, 180, 194, 0.15);
+  --material-border-strong: rgba(114, 223, 190, 0.4);
+  --material-overlay: rgba(6, 12, 17, 0.64);
+  --material-panel-shadow:
+    -8px -8px 20px rgba(49, 75, 88, 0.24),
+    10px 10px 24px rgba(4, 10, 15, 0.52);
+  --material-control-shadow:
+    -3px -3px 8px rgba(51, 79, 91, 0.22),
+    4px 4px 10px rgba(4, 10, 15, 0.48);
+  --material-pressed-shadow:
+    inset 3px 3px 8px rgba(4, 10, 15, 0.5),
+    inset -3px -3px 8px rgba(51, 79, 91, 0.18);
+  --material-inset-shadow:
+    inset 4px 4px 10px rgba(4, 10, 15, 0.5),
+    inset -3px -3px 8px rgba(51, 79, 91, 0.15);
+  --material-radius-panel: 17px;
+  --material-radius-control: 10px;
+  --material-blur: 0px;
+  color: var(--text);
+  background: var(--bg);
+}
+
+:root[data-theme="neumorphic"] body {
+  background:
+    radial-gradient(circle at 12% -8%, rgba(77, 122, 139, 0.13), transparent 30rem),
+    linear-gradient(145deg, #16242e, #121e27 70%);
+}
+
+.theme-preview--glass {
+  border-color: rgba(194, 222, 239, 0.28);
+  background:
+    radial-gradient(circle at 18% 20%, rgba(69, 180, 184, 0.5), transparent 42%),
+    radial-gradient(circle at 84% 8%, rgba(118, 91, 182, 0.45), transparent 48%),
+    #08131f;
+}
+
+.theme-preview--glass span {
+  border: 1px solid rgba(216, 237, 248, 0.2);
+  background: rgba(24, 46, 65, 0.68);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(4px);
+}
+
+.theme-preview--glass span:last-child {
+  background: rgba(124, 229, 195, 0.72);
+}
+
+.theme-preview--neumorphic {
+  border-color: rgba(145, 173, 187, 0.2);
+  background: #182832;
+}
+
+.theme-preview--neumorphic span {
+  background: #1b2d38;
+  box-shadow:
+    -3px -3px 6px rgba(57, 85, 97, 0.34),
+    3px 3px 7px rgba(4, 10, 14, 0.58);
+}
+
+.theme-preview--neumorphic span:last-child {
+  background: #17272f;
+  box-shadow:
+    inset 3px 3px 6px rgba(4, 10, 14, 0.55),
+    inset -3px -3px 6px rgba(57, 85, 97, 0.22);
+}

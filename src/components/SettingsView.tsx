@@ -1,32 +1,23 @@
-import { Check, Leaf, Moon, Sun } from "lucide-react";
+import { Check, Layers3, Leaf, Moon, Sparkles, Sun } from "lucide-react";
 import { useState } from "react";
+import {
+  THEME_DEFINITIONS,
+  THEME_IDS,
+} from "../theme";
 import type { Theme } from "../types";
 
-const themes: Array<{
-  id: Theme;
-  name: string;
-  description: string;
-  Icon: typeof Leaf;
-}> = [
-  {
-    id: "green",
-    name: "Green",
-    description: "The original Local Status palette.",
-    Icon: Leaf,
-  },
-  {
-    id: "dark",
-    name: "Dark",
-    description: "Neutral charcoal surfaces with soft contrast.",
-    Icon: Moon,
-  },
-  {
-    id: "light",
-    name: "Light",
-    description: "Bright surfaces for daylight environments.",
-    Icon: Sun,
-  },
-];
+const themeIcons: Record<Theme, typeof Leaf> = {
+  green: Leaf,
+  dark: Moon,
+  light: Sun,
+  glass: Sparkles,
+  neumorphic: Layers3,
+};
+
+const themes = THEME_IDS.map((id) => ({
+  ...THEME_DEFINITIONS[id],
+  Icon: themeIcons[id],
+}));
 
 export function SettingsView({
   theme,
@@ -66,7 +57,7 @@ export function SettingsView({
           <p>Choose the palette used across the app, diffs, and terminals.</p>
         </div>
         <div className="theme-grid" role="radiogroup" aria-label="Theme">
-          {themes.map(({ id, name, description, Icon }) => (
+          {themes.map(({ id, label, description, material, layout, Icon }) => (
             <button
               className={`theme-card ${theme === id ? "is-selected" : ""}`}
               type="button"
@@ -76,7 +67,11 @@ export function SettingsView({
               key={id}
               onClick={() => void selectTheme(id)}
             >
-              <span className={`theme-preview theme-preview--${id}`}>
+              <span
+                className={`theme-preview theme-preview--${id}`}
+                data-material={material}
+                data-layout={layout}
+              >
                 <span />
                 <span />
                 <span />
@@ -84,7 +79,7 @@ export function SettingsView({
               <span className="theme-card__copy">
                 <span>
                   <Icon size={17} />
-                  <strong>{name}</strong>
+                  <strong>{label}</strong>
                 </span>
                 <small>{description}</small>
               </span>

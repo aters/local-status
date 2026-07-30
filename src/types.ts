@@ -1,3 +1,7 @@
+import type { Theme } from "./theme";
+
+export type { Theme } from "./theme";
+
 export type ChangeScope =
   | "conflict"
   | "staged"
@@ -24,8 +28,6 @@ export interface WorkspaceState {
   current: Workspace | null;
   recent: Workspace[];
 }
-
-export type Theme = "green" | "dark" | "light";
 
 export interface Preferences {
   theme: Theme;

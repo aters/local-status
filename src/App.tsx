@@ -18,6 +18,10 @@ import { SettingsView } from "./components/SettingsView";
 import { AppTooltip } from "./components/AppTooltip";
 import { WorkspaceSwitcher } from "./components/WorkspaceSwitcher";
 import { routeParams, updateRoute } from "./route";
+import {
+  applyThemeAttributes,
+  normalizeTheme,
+} from "./theme";
 import type {
   AiProvider,
   AiTerminalAction,
@@ -134,9 +138,10 @@ function Onboarding({
 export function App() {
   const [view, setView] = useState<AppView>(initialView);
   const [theme, setTheme] = useState<Theme>(() => {
-    const saved = window.localStorage.getItem("local-status:theme");
-    const initial = saved === "dark" || saved === "light" ? saved : "green";
-    document.documentElement.dataset.theme = initial;
+    const initial = normalizeTheme(
+      window.localStorage.getItem("local-status:theme"),
+    );
+    applyThemeAttributes(initial);
     return initial;
   });
   const [workspace, setWorkspace] = useState<WorkspaceState | null>(null);
@@ -203,9 +208,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.style.colorScheme =
-      theme === "light" ? "light" : "dark";
+    applyThemeAttributes(theme);
     window.localStorage.setItem("local-status:theme", theme);
   }, [theme]);
 
@@ -414,6 +417,7 @@ export function App() {
         <nav className="app-nav" aria-label="Workspace sections">
           <button
             type="button"
+            aria-label="Repositories"
             className={view === "repositories" ? "is-active" : ""}
             onClick={() => selectView("repositories")}
           >
@@ -422,6 +426,7 @@ export function App() {
           </button>
           <button
             type="button"
+            aria-label="Pull Requests"
             className={view === "pull-requests" ? "is-active" : ""}
             onClick={() => selectView("pull-requests")}
           >
@@ -430,6 +435,7 @@ export function App() {
           </button>
           <button
             type="button"
+            aria-label="Services"
             className={view === "services" ? "is-active" : ""}
             onClick={() => selectView("services")}
           >

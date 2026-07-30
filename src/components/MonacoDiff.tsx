@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { editor } from "monaco-editor";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { MONACO_THEMES } from "../editor-themes";
 import "../monaco";
 import type { Comparison, Theme } from "../types";
 
@@ -493,66 +494,12 @@ export default function MonacoDiff({
           modified={comparison.modified.content}
           theme={`local-status-${theme}`}
           beforeMount={(monacoInstance) => {
-            monacoInstance.editor.defineTheme("local-status-green", {
-              base: "vs-dark",
-              inherit: true,
-              rules: [],
-              colors: {
-                "editor.background": "#0a1210",
-                "editorGutter.background": "#0a1210",
-                "editorLineNumber.foreground": "#496057",
-                "editorLineNumber.activeForeground": "#9bb5aa",
-                "diffEditor.insertedTextBackground": "#1f7a5242",
-                "diffEditor.removedTextBackground": "#b64b5542",
-                "diffEditor.insertedLineBackground": "#123b2b88",
-                "diffEditor.removedLineBackground": "#3d202588",
-                "diffEditor.diagonalFill": "#18231f",
-                "editorOverviewRuler.addedForeground": "#67dba0",
-                "editorOverviewRuler.deletedForeground": "#f2777f",
-                "scrollbarSlider.background": "#66807433",
-                "scrollbarSlider.hoverBackground": "#78998a66",
-              },
-            });
-            monacoInstance.editor.defineTheme("local-status-dark", {
-              base: "vs-dark",
-              inherit: true,
-              rules: [],
-              colors: {
-                "editor.background": "#171717",
-                "editorGutter.background": "#171717",
-                "editorLineNumber.foreground": "#737373",
-                "editorLineNumber.activeForeground": "#d4d4d4",
-                "diffEditor.insertedTextBackground": "#2f7d4d55",
-                "diffEditor.removedTextBackground": "#a94c5555",
-                "diffEditor.insertedLineBackground": "#173d2788",
-                "diffEditor.removedLineBackground": "#43232988",
-                "diffEditor.diagonalFill": "#262626",
-                "editorOverviewRuler.addedForeground": "#57c785",
-                "editorOverviewRuler.deletedForeground": "#ef7a82",
-                "scrollbarSlider.background": "#77777733",
-                "scrollbarSlider.hoverBackground": "#99999966",
-              },
-            });
-            monacoInstance.editor.defineTheme("local-status-light", {
-              base: "vs",
-              inherit: true,
-              rules: [],
-              colors: {
-                "editor.background": "#ffffff",
-                "editorGutter.background": "#ffffff",
-                "editorLineNumber.foreground": "#8b8b8b",
-                "editorLineNumber.activeForeground": "#333333",
-                "diffEditor.insertedTextBackground": "#60b8784a",
-                "diffEditor.removedTextBackground": "#e06c754a",
-                "diffEditor.insertedLineBackground": "#dff4e688",
-                "diffEditor.removedLineBackground": "#f9dfe288",
-                "diffEditor.diagonalFill": "#eeeeee",
-                "editorOverviewRuler.addedForeground": "#258a52",
-                "editorOverviewRuler.deletedForeground": "#c44550",
-                "scrollbarSlider.background": "#77777733",
-                "scrollbarSlider.hoverBackground": "#66666655",
-              },
-            });
+            for (const [themeId, definition] of Object.entries(MONACO_THEMES)) {
+              monacoInstance.editor.defineTheme(
+                `local-status-${themeId}`,
+                definition,
+              );
+            }
           }}
           onMount={(instance) => {
             editorRef.current = instance;

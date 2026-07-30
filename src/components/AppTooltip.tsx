@@ -56,6 +56,13 @@ export function AppTooltip() {
       if (!(origin instanceof Element)) return;
       const target = origin.closest<HTMLElement>(tooltipTargets);
       if (!target) return;
+      if (
+        target.matches(":disabled") ||
+        target.getAttribute("aria-expanded") === "true"
+      ) {
+        setTooltip(null);
+        return;
+      }
       const label =
         target.dataset.tooltip ||
         target.getAttribute("aria-label") ||
@@ -90,15 +97,23 @@ export function AppTooltip() {
       setTooltip(null);
     }
 
+    function hideFromAction() {
+      setTooltip(null);
+    }
+
     document.addEventListener("pointerover", show);
     document.addEventListener("focusin", show);
     document.addEventListener("pointerout", hide);
     document.addEventListener("focusout", hide);
+    document.addEventListener("pointerdown", hideFromAction, true);
+    document.addEventListener("click", hideFromAction, true);
     return () => {
       document.removeEventListener("pointerover", show);
       document.removeEventListener("focusin", show);
       document.removeEventListener("pointerout", hide);
       document.removeEventListener("focusout", hide);
+      document.removeEventListener("pointerdown", hideFromAction, true);
+      document.removeEventListener("click", hideFromAction, true);
     };
   }, []);
 

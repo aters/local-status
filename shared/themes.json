@@ -1,0 +1,42 @@
+{
+  "green": {
+    "id": "green",
+    "label": "Green",
+    "description": "The original Local Status palette.",
+    "colorScheme": "dark",
+    "material": "flat",
+    "layout": "edge"
+  },
+  "dark": {
+    "id": "dark",
+    "label": "Dark",
+    "description": "Neutral charcoal surfaces with soft contrast.",
+    "colorScheme": "dark",
+    "material": "flat",
+    "layout": "edge"
+  },
+  "light": {
+    "id": "light",
+    "label": "Light",
+    "description": "Bright surfaces for daylight environments.",
+    "colorScheme": "light",
+    "material": "flat",
+    "layout": "edge"
+  },
+  "glass": {
+    "id": "glass",
+    "label": "Glass",
+    "description": "Floating aurora glass with crisp translucent layers.",
+    "colorScheme": "dark",
+    "material": "glass",
+    "layout": "floating"
+  },
+  "neumorphic": {
+    "id": "neumorphic",
+    "label": "Neumorphic",
+    "description": "A sculpted dark workspace with tactile depth.",
+    "colorScheme": "dark",
+    "material": "neumorphic",
+    "layout": "sculpted"
+  }
+}

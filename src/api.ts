@@ -1,4 +1,5 @@
 import type { CommitScope, LocalStatusBridge } from "./types";
+import { normalizeTheme } from "./theme";
 
 function bridge(): LocalStatusBridge {
   if (!window.localStatus) {
@@ -72,11 +73,7 @@ export const api = {
   preferences: () =>
     bridge().preferences?.get() ??
     Promise.resolve({
-      theme:
-        window.localStorage.getItem("local-status:theme") === "dark" ||
-        window.localStorage.getItem("local-status:theme") === "light"
-          ? window.localStorage.getItem("local-status:theme") as "dark" | "light"
-          : "green",
+      theme: normalizeTheme(window.localStorage.getItem("local-status:theme")),
     }),
   setTheme: (theme: Parameters<LocalStatusBridge["preferences"]["setTheme"]>[0]) =>
     bridge().preferences?.setTheme(theme) ?? Promise.resolve({ theme }),
