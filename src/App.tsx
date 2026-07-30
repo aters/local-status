@@ -8,15 +8,19 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
+import { QuickOpen } from "./components/QuickOpen";
 import { RepositoryWorkspace } from "./components/RepositoryWorkspace";
 import { ServicesView } from "./components/ServicesView";
+import { WorkspaceSwitcher } from "./components/WorkspaceSwitcher";
 import { routeParams, updateRoute } from "./route";
 import type {
   AiProvider,
   AiTerminalAction,
+  AppShortcut,
   RepositoriesResponse,
   TerminalKind,
   TerminalSession,
+  WorkspaceFile,
   WorkspaceState,
 } from "./types";
 
@@ -42,6 +46,14 @@ function shellArgument(value: string) {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
+function appMenuOpen() {
+  return Boolean(
+    document.querySelector(
+      '.workspace-menu[role="menu"], .repository-run-menu[role="menu"]',
+    ),
+  );
+}
+
 function Onboarding({
   state,
   busy,
@@ -52,8 +64,8 @@ function Onboarding({
   state: WorkspaceState;
   busy: boolean;
   error: string | null;
-  onChoose: () => Promise<void>;
-  onOpenRecent: (path: string) => Promise<void>;
+  onChoose: () => Promise<boolean>;
+  onOpenRecent: (path: string) => Promise<boolean>;
 }) {
   return (
     <main className="onboarding">
@@ -114,18 +126,24 @@ export function App() {
   const [repositories, setRepositories] = useState<RepositoriesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+  const [repositoryError, setRepositoryError] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(
     () => routeParams().get("terminal"),
   );
+  const [quickOpenOpen, setQuickOpenOpen] = useState(false);
+  const [findRequest, setFindRequest] = useState(0);
+  const [openFileRequest, setOpenFileRequest] = useState<
+    (WorkspaceFile & { requestId: number }) | null
+  >(null);
   const workspacePath = workspace?.current?.path ?? null;
 
   const refreshRepositories = useCallback(async () => {
-    setError(null);
+    setRepositoryError(null);
     try {
       setRepositories(await api.repositories());
     } catch (caught) {
-      setError(
+      setRepositoryError(
         caught instanceof Error ? caught.message : "Could not scan local repositories.",
       );
     } finally {
@@ -152,7 +170,7 @@ export function App() {
       .workspace()
       .then(applyWorkspaceState)
       .catch((caught) => {
-        setError(
+        setWorkspaceError(
           caught instanceof Error ? caught.message : "Could not load workspace settings.",
         );
         setWorkspace({ current: null, recent: [] });
@@ -171,27 +189,70 @@ export function App() {
     };
   }, [refreshRepositories, workspacePath]);
 
-  async function chooseWorkspace() {
+  const handleShortcut = useCallback(
+    (shortcut: AppShortcut) => {
+      if (shortcut === "quick-open") {
+        if (quickOpenOpen) {
+          document.querySelector<HTMLInputElement>(".quick-open__search input")?.focus();
+          return;
+        }
+        if (document.querySelector('[aria-modal="true"]') || appMenuOpen()) return;
+        setQuickOpenOpen(true);
+        return;
+      }
+      if (quickOpenOpen) return;
+      const modal = document.querySelector<HTMLElement>('[aria-modal="true"]');
+      if (modal && !modal.classList.contains("ai-terminal-modal")) return;
+      if (appMenuOpen()) return;
+      setFindRequest((current) => current + 1);
+    },
+    [quickOpenOpen],
+  );
+
+  useEffect(() => {
+    function handleKeyboard(event: KeyboardEvent) {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      const key = event.key.toLowerCase();
+      if (key !== "p" && key !== "f") return;
+      event.preventDefault();
+      handleShortcut(key === "p" ? "quick-open" : "find");
+    }
+    const handleNativeShortcut = (shortcut: AppShortcut) => handleShortcut(shortcut);
+    window.addEventListener("keydown", handleKeyboard, true);
+    window.localStatus.shortcuts.onRequest(handleNativeShortcut);
+    return () => {
+      window.removeEventListener("keydown", handleKeyboard, true);
+      window.localStatus.shortcuts.offRequest(handleNativeShortcut);
+    };
+  }, [handleShortcut]);
+
+  async function chooseWorkspace(): Promise<boolean> {
     setWorkspaceBusy(true);
-    setError(null);
+    setWorkspaceError(null);
     try {
       await applyWorkspaceState(await api.chooseWorkspace());
+      return true;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not open that workspace.");
+      setWorkspaceError(
+        caught instanceof Error ? caught.message : "Could not open that workspace.",
+      );
+      return false;
     } finally {
       setWorkspaceBusy(false);
     }
   }
 
-  async function openRecent(path: string) {
+  async function openRecent(path: string): Promise<boolean> {
     setWorkspaceBusy(true);
-    setError(null);
+    setWorkspaceError(null);
     try {
       await applyWorkspaceState(await api.openWorkspace(path));
+      return true;
     } catch (caught) {
-      setError(
+      setWorkspaceError(
         caught instanceof Error ? caught.message : "That workspace is no longer available.",
       );
+      return false;
     } finally {
       setWorkspaceBusy(false);
     }
@@ -269,7 +330,7 @@ export function App() {
       <Onboarding
         state={workspace}
         busy={workspaceBusy}
-        error={error}
+        error={workspaceError}
         onChoose={chooseWorkspace}
         onOpenRecent={openRecent}
       />
@@ -304,27 +365,27 @@ export function App() {
             Services
           </button>
         </nav>
-        <button
-          className="workspace-switcher"
-          type="button"
-          onClick={() => void chooseWorkspace()}
-          disabled={workspaceBusy}
-          title={workspace.current.path}
-        >
-          <FolderOpen size={14} />
-          <span>{workspace.current.name}</span>
-          <small>Change</small>
-        </button>
+        <WorkspaceSwitcher
+          current={workspace.current}
+          recent={workspace.recent}
+          busy={workspaceBusy}
+          error={workspaceError}
+          onChoose={chooseWorkspace}
+          onOpenRecent={openRecent}
+          onClearError={() => setWorkspaceError(null)}
+        />
       </header>
 
       {view === "repositories" ? (
         <RepositoryWorkspace
           data={repositories}
           loading={loading}
-          error={error}
+          error={repositoryError}
           onRefresh={refreshRepositories}
           onStartTerminal={startTerminal}
           onStartAiTerminal={startAiTerminal}
+          findRequest={findRequest}
+          openFileRequest={openFileRequest}
         />
       ) : (
         <ServicesView
@@ -335,8 +396,32 @@ export function App() {
             updateRoute({ view: "services", terminal: sessionId });
           }}
           onStartTerminal={startTerminal}
+          findRequest={findRequest}
         />
       )}
+      <QuickOpen
+        open={quickOpenOpen}
+        workspacePath={workspace.current.path}
+        selectedRepositoryId={routeParams().get("repo")}
+        onClose={() => setQuickOpenOpen(false)}
+        onOpen={(file) => {
+          const requestId = Date.now();
+          setView("repositories");
+          setOpenFileRequest({ ...file, requestId });
+          updateRoute(
+            {
+              view: "repositories",
+              repo: file.repositoryId,
+              tab: "files",
+              file: file.path,
+              scope: "working",
+              commit: null,
+              terminal: null,
+            },
+            "push",
+          );
+        }}
+      />
     </div>
   );
 }

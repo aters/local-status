@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 const terminalListeners = new Map();
+const shortcutListeners = new Map();
 
 const invoke = (channel, payload) => ipcRenderer.invoke(channel, payload);
 
@@ -18,6 +19,7 @@ contextBridge.exposeInMainWorld("localStatus", {
     commit: (repositoryId, sha) =>
       invoke("repositories:commit", { repositoryId, sha }),
     files: (repositoryId) => invoke("repositories:files", { repositoryId }),
+    workspaceFiles: () => invoke("repositories:workspace-files"),
     comparison: (repositoryId, options) =>
       invoke("repositories:comparison", { repositoryId, options }),
     fetch: (repositoryId) => invoke("repositories:fetch", { repositoryId }),
@@ -34,6 +36,22 @@ contextBridge.exposeInMainWorld("localStatus", {
       invoke("repositories:revert", { repositoryId, selection }),
     sync: (repositoryId) => invoke("repositories:sync", { repositoryId }),
     scripts: (repositoryId) => invoke("repositories:scripts", { repositoryId }),
+  },
+  shortcuts: {
+    onRequest: (callback) => {
+      if (typeof callback !== "function" || shortcutListeners.has(callback)) return;
+      const listener = (_event, shortcut) => {
+        if (shortcut === "quick-open" || shortcut === "find") callback(shortcut);
+      };
+      shortcutListeners.set(callback, listener);
+      ipcRenderer.on("application:shortcut", listener);
+    },
+    offRequest: (callback) => {
+      const listener = shortcutListeners.get(callback);
+      if (!listener) return;
+      ipcRenderer.removeListener("application:shortcut", listener);
+      shortcutListeners.delete(callback);
+    },
   },
   ai: {
     status: () => invoke("ai:status"),

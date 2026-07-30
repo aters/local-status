@@ -48,6 +48,7 @@ export function ServicesView({
   activeSessionId,
   onActiveSessionChange,
   onStartTerminal,
+  findRequest,
 }: {
   repositories: RepositorySummary[];
   activeSessionId: string | null;
@@ -57,6 +58,7 @@ export function ServicesView({
     kind: TerminalKind,
     option?: string,
   ) => Promise<void>;
+  findRequest: number;
 }) {
   const [sessions, setSessions] = useState<TerminalSession[]>([]);
   const [profiles, setProfiles] = useState<ServiceProfile[]>([]);
@@ -468,7 +470,7 @@ export function ServicesView({
                   </button>
                 </div>
               </header>
-              <TerminalPane session={activeSession} />
+              <TerminalPane session={activeSession} findRequest={findRequest} />
             </>
           ) : (
             <div className="terminal-welcome">

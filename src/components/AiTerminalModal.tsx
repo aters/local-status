@@ -14,6 +14,7 @@ interface AiTerminalModalProps {
   session: TerminalSession;
   provider: AiProvider;
   action: AiTerminalAction;
+  findRequest: number;
   onClose: () => void;
 }
 
@@ -21,6 +22,7 @@ export function AiTerminalModal({
   session,
   provider,
   action,
+  findRequest,
   onClose,
 }: AiTerminalModalProps) {
   const [currentSession, setCurrentSession] = useState(session);
@@ -133,7 +135,11 @@ export function AiTerminalModal({
           className="ai-terminal-modal__terminal"
           onKeyDown={(event) => event.stopPropagation()}
         >
-          <TerminalPane session={currentSession} autoFocus />
+          <TerminalPane
+            session={currentSession}
+            autoFocus
+            findRequest={findRequest}
+          />
         </div>
 
         <footer className="ai-terminal-modal__footer">

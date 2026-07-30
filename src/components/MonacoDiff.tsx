@@ -6,7 +6,9 @@ import {
   Columns2,
   Eye,
   Rows3,
+  Search,
   WrapText,
+  X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { editor } from "monaco-editor";
@@ -40,8 +42,17 @@ function loadBoolean(key: string, fallback: boolean) {
   return value === null ? fallback : value === "true";
 }
 
-export default function MonacoDiff({ comparison }: { comparison: Comparison }) {
+export default function MonacoDiff({
+  comparison,
+  findRequest = 0,
+}: {
+  comparison: Comparison;
+  findRequest?: number;
+}) {
   const editorRef = useRef<DiffEditorInstance | null>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+  const previewFindInputRef = useRef<HTMLInputElement>(null);
+  const previewMatchesRef = useRef<Range[]>([]);
   const diffUpdateSubscriptionRef = useRef<{ dispose(): void } | null>(null);
   const autoRevealFrameRef = useRef<number | null>(null);
   const revealedComparisonRef = useRef<string | null>(null);
@@ -63,6 +74,11 @@ export default function MonacoDiff({ comparison }: { comparison: Comparison }) {
   const [markdownPreview, setMarkdownPreview] = useState(() =>
     loadBoolean("local-status:markdown-preview", false),
   );
+  const [previewFindOpen, setPreviewFindOpen] = useState(false);
+  const [previewFindQuery, setPreviewFindQuery] = useState("");
+  const [previewMatchCount, setPreviewMatchCount] = useState(0);
+  const [previewMatchIndex, setPreviewMatchIndex] = useState(0);
+  const [editorReady, setEditorReady] = useState(false);
 
   useEffect(() => {
     window.localStorage.setItem("local-status:side-by-side", String(sideBySide));
@@ -151,6 +167,127 @@ export default function MonacoDiff({ comparison }: { comparison: Comparison }) {
     comparison.modified.missing && !comparison.original.missing
       ? comparison.original
       : comparison.modified;
+
+  const clearPreviewHighlights = useCallback(() => {
+    const css = globalThis.CSS as
+      | (typeof CSS & {
+          highlights?: { delete(name: string): void };
+        })
+      | undefined;
+    css?.highlights?.delete("local-status-find");
+    css?.highlights?.delete("local-status-find-active");
+  }, []);
+
+  const paintPreviewHighlights = useCallback(
+    (activeIndex: number) => {
+      clearPreviewHighlights();
+      const ranges = previewMatchesRef.current;
+      const HighlightConstructor = (
+        window as typeof window & {
+          Highlight?: new (...ranges: Range[]) => unknown;
+        }
+      ).Highlight;
+      const css = globalThis.CSS as
+        | (typeof CSS & {
+            highlights?: { set(name: string, highlight: unknown): void };
+          })
+        | undefined;
+      const registry = css?.highlights;
+      if (!HighlightConstructor || !registry || !ranges.length) return;
+      const active = ranges[activeIndex];
+      registry.set(
+        "local-status-find",
+        new HighlightConstructor(...ranges.filter((range) => range !== active)),
+      );
+      if (active) {
+        registry.set(
+          "local-status-find-active",
+          new HighlightConstructor(active),
+        );
+      }
+    },
+    [clearPreviewHighlights],
+  );
+
+  useEffect(() => {
+    if (!previewFindOpen || !previewFindQuery.trim() || !previewRef.current) {
+      previewMatchesRef.current = [];
+      setPreviewMatchCount(0);
+      setPreviewMatchIndex(0);
+      clearPreviewHighlights();
+      return;
+    }
+    const query = previewFindQuery.toLowerCase();
+    const walker = document.createTreeWalker(
+      previewRef.current,
+      NodeFilter.SHOW_TEXT,
+    );
+    const ranges: Range[] = [];
+    let node = walker.nextNode();
+    while (node && ranges.length < 500) {
+      const content = node.textContent || "";
+      const normalized = content.toLowerCase();
+      let offset = 0;
+      while (offset < normalized.length && ranges.length < 500) {
+        const match = normalized.indexOf(query, offset);
+        if (match < 0) break;
+        const range = document.createRange();
+        range.setStart(node, match);
+        range.setEnd(node, match + query.length);
+        ranges.push(range);
+        offset = match + Math.max(query.length, 1);
+      }
+      node = walker.nextNode();
+    }
+    previewMatchesRef.current = ranges;
+    setPreviewMatchCount(ranges.length);
+    setPreviewMatchIndex(0);
+    paintPreviewHighlights(0);
+  }, [
+    clearPreviewHighlights,
+    paintPreviewHighlights,
+    previewFindOpen,
+    previewFindQuery,
+    previewSide.content,
+  ]);
+
+  useEffect(
+    () => () => {
+      clearPreviewHighlights();
+    },
+    [clearPreviewHighlights],
+  );
+
+  function revealPreviewMatch(index: number) {
+    const ranges = previewMatchesRef.current;
+    if (!ranges.length) return;
+    const next = (index + ranges.length) % ranges.length;
+    setPreviewMatchIndex(next);
+    paintPreviewHighlights(next);
+    ranges[next]?.startContainer.parentElement?.scrollIntoView({
+      block: "center",
+      behavior: "smooth",
+    });
+  }
+
+  useEffect(() => {
+    if (!findRequest) return;
+    if (showMarkdownPreview) {
+      setPreviewFindOpen(true);
+      return;
+    }
+    const instance = editorRef.current;
+    if (!instance) return;
+    const original = instance.getOriginalEditor();
+    const modified = instance.getModifiedEditor();
+    const target = original.hasTextFocus() ? original : modified;
+    target.focus();
+    void target.getAction("actions.find")?.run();
+  }, [editorReady, findRequest, showMarkdownPreview]);
+
+  useEffect(() => {
+    if (previewFindOpen) previewFindInputRef.current?.focus();
+  }, [previewFindOpen]);
 
   return (
     <div className="diff-shell">
@@ -250,6 +387,61 @@ export default function MonacoDiff({ comparison }: { comparison: Comparison }) {
           Preview limited to the first 1 MB to keep the workspace responsive.
         </div>
       )}
+      {showMarkdownPreview && previewFindOpen && (
+        <div className="markdown-find">
+          <Search size={14} />
+          <input
+            ref={previewFindInputRef}
+            value={previewFindQuery}
+            onChange={(event) => setPreviewFindQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                revealPreviewMatch(
+                  previewMatchIndex + (event.shiftKey ? -1 : 1),
+                );
+              } else if (event.key === "Escape") {
+                setPreviewFindOpen(false);
+                setPreviewFindQuery("");
+                window.requestAnimationFrame(() => previewRef.current?.focus());
+              }
+            }}
+            placeholder="Find in preview"
+            aria-label="Find in Markdown preview"
+          />
+          <span>
+            {previewMatchCount
+              ? `${previewMatchIndex + 1} / ${previewMatchCount}`
+              : "No results"}
+          </span>
+          <button
+            type="button"
+            aria-label="Previous preview match"
+            disabled={!previewMatchCount}
+            onClick={() => revealPreviewMatch(previewMatchIndex - 1)}
+          >
+            <ArrowUp size={14} />
+          </button>
+          <button
+            type="button"
+            aria-label="Next preview match"
+            disabled={!previewMatchCount}
+            onClick={() => revealPreviewMatch(previewMatchIndex + 1)}
+          >
+            <ArrowDown size={14} />
+          </button>
+          <button
+            type="button"
+            aria-label="Close preview find"
+            onClick={() => {
+              setPreviewFindOpen(false);
+              setPreviewFindQuery("");
+              window.requestAnimationFrame(() => previewRef.current?.focus());
+            }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
       {unavailable ? (
         <div className="viewer-empty">
           <span className="empty-orbit">01</span>
@@ -257,7 +449,7 @@ export default function MonacoDiff({ comparison }: { comparison: Comparison }) {
           <p>This file is tracked, but its contents cannot be shown as text.</p>
         </div>
       ) : showMarkdownPreview ? (
-        <div className="markdown-preview-shell">
+        <div className="markdown-preview-shell" ref={previewRef} tabIndex={-1}>
           <div className="markdown-preview-version">
             Previewing {previewSide.label}
           </div>
@@ -322,6 +514,7 @@ export default function MonacoDiff({ comparison }: { comparison: Comparison }) {
           }}
           onMount={(instance) => {
             editorRef.current = instance;
+            setEditorReady(true);
             diffUpdateSubscriptionRef.current?.dispose();
             diffUpdateSubscriptionRef.current = instance.onDidUpdateDiff(
               revealFirstPendingChange,

@@ -81,7 +81,8 @@ from repositories you trust.
 
 | Shortcut | Action |
 | --- | --- |
-| `Cmd+P` | Focus repository search |
+| `Cmd/Ctrl+P` | Quick Open files across the workspace |
+| `Cmd/Ctrl+F` | Find in the active diff, Markdown preview, terminal, or list |
 | `Cmd+Enter` | Commit from the commit window |
 | `Enter` | Open the selected repository or file |
 | `F7` | Next diff change |

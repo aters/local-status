@@ -5,11 +5,18 @@ import type { Comparison } from "../types";
 import MonacoDiff from "./MonacoDiff";
 
 const editorMocks = vi.hoisted(() => {
+  const findAction = { run: vi.fn() };
   const originalEditor = {
     revealLineInCenter: vi.fn(),
+    hasTextFocus: vi.fn(() => false),
+    focus: vi.fn(),
+    getAction: vi.fn(() => findAction),
   };
   const modifiedEditor = {
     revealLineInCenter: vi.fn(),
+    hasTextFocus: vi.fn(() => false),
+    focus: vi.fn(),
+    getAction: vi.fn(() => findAction),
   };
   const lineChanges = [
     {
@@ -34,7 +41,7 @@ const editorMocks = vi.hoisted(() => {
       return { dispose: vi.fn() };
     }),
   };
-  return { instance, modifiedEditor, originalEditor };
+  return { findAction, instance, modifiedEditor, originalEditor };
 });
 
 vi.mock("@monaco-editor/react", () => ({
@@ -139,5 +146,36 @@ describe("Markdown preview", () => {
     );
 
     expect(screen.queryByRole("button", { name: "Preview" })).not.toBeInTheDocument();
+  });
+
+  it("opens Monaco Find in the modified pane by default", async () => {
+    const { rerender } = render(
+      <MonacoDiff comparison={comparison()} findRequest={0} />,
+    );
+
+    rerender(<MonacoDiff comparison={comparison()} findRequest={1} />);
+
+    await waitFor(() => {
+      expect(editorMocks.modifiedEditor.focus).toHaveBeenCalled();
+      expect(editorMocks.findAction.run).toHaveBeenCalled();
+    });
+  });
+
+  it("opens contextual search in Markdown preview", async () => {
+    const user = userEvent.setup();
+    const currentComparison = comparison();
+    const { rerender } = render(
+      <MonacoDiff comparison={currentComparison} findRequest={0} />,
+    );
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+
+    rerender(<MonacoDiff comparison={currentComparison} findRequest={1} />);
+    const search = await screen.findByRole("textbox", {
+      name: "Find in Markdown preview",
+    });
+    expect(search).toHaveFocus();
+
+    await user.type(search, "Local");
+    expect(screen.getByText("1 / 1")).toBeVisible();
   });
 });

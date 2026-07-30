@@ -7,7 +7,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  CircleDot,
   CloudDownload,
   Code2,
   File,
@@ -61,6 +60,7 @@ import type {
   RepositoryScript,
   TerminalKind,
   TerminalSession,
+  WorkspaceFile,
 } from "../types";
 import { AiTerminalModal } from "./AiTerminalModal";
 import { CommitModal } from "./CommitModal";
@@ -171,7 +171,6 @@ const scopeGroups: Array<{
     scopes: ["staged"],
     actionScope: "staged",
     label: "Staged",
-    description: "Ready to commit",
   },
   {
     key: "unstaged",
@@ -292,7 +291,6 @@ function RepositoryNavigator({
           placeholder="Find a repository"
           aria-label="Find a repository"
         />
-        <kbd>⌘P</kbd>
       </label>
       <div className="filter-strip" aria-label="Filter repositories">
         {(["all", "changed", "incoming", "outgoing"] as RepoFilter[]).map((value) => (
@@ -459,7 +457,10 @@ function ChangeList({
         if (!items.length) return null;
         const isCollapsed = collapsed.has(group.key);
         return (
-          <section className="change-group" key={group.key}>
+          <section
+            className={`change-group change-group--${group.key}`}
+            key={group.key}
+          >
             <div className="change-group__header">
               <button
                 type="button"
@@ -525,24 +526,36 @@ function ChangeList({
 function CommitList({
   commits,
   selectedSha,
+  search,
   onSelect,
 }: {
   commits: Commit[];
   selectedSha: string | null;
+  search: string;
   onSelect: (commit: Commit) => void;
 }) {
-  if (!commits.length) {
+  const normalizedSearch = search.trim().toLowerCase();
+  const filtered = commits.filter((commit) =>
+    [commit.subject, commit.author, commit.shortSha, commit.sha].some((value) =>
+      value.toLowerCase().includes(normalizedSearch),
+    ),
+  );
+  if (!filtered.length) {
     return (
       <div className="panel-empty panel-empty--large">
         <History size={24} />
-        <strong>No commits here</strong>
-        <span>This range does not contain any commits.</span>
+        <strong>{normalizedSearch ? "No matching commits" : "No commits here"}</strong>
+        <span>
+          {normalizedSearch
+            ? "Try another subject, author, or SHA."
+            : "This range does not contain any commits."}
+        </span>
       </div>
     );
   }
   return (
     <div className="commit-list">
-      {commits.map((commit) => (
+      {filtered.map((commit) => (
         <button
           type="button"
           className={`commit-row ${commit.sha === selectedSha ? "is-selected" : ""}`}
@@ -572,6 +585,8 @@ export function RepositoryWorkspace({
   onRefresh,
   onStartTerminal,
   onStartAiTerminal,
+  findRequest,
+  openFileRequest,
 }: {
   data: RepositoriesResponse | null;
   loading: boolean;
@@ -588,6 +603,8 @@ export function RepositoryWorkspace({
     action: AiTerminalAction,
     executablePath: string | null,
   ) => Promise<TerminalSession>;
+  findRequest: number;
+  openFileRequest: (WorkspaceFile & { requestId: number }) | null;
 }) {
   const repositories = useMemo(() => data?.repositories ?? [], [data?.repositories]);
   const params = getParams();
@@ -608,6 +625,7 @@ export function RepositoryWorkspace({
     initialCompare,
   );
   const [comparison, setComparison] = useState<Comparison | null>(null);
+  const [viewerFindRequest, setViewerFindRequest] = useState(0);
   const [viewerLoading, setViewerLoading] = useState(false);
   const [viewerError, setViewerError] = useState<string | null>(null);
   const [selectedCommit, setSelectedCommit] = useState<string | null>(
@@ -649,10 +667,12 @@ export function RepositoryWorkspace({
   );
   const resizeStart = useRef({ repo: repoWidth, context: contextWidth });
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const contextSearchInputRef = useRef<HTMLInputElement>(null);
   const runMenuRef = useRef<HTMLDivElement>(null);
   const runMenuButtonRef = useRef<HTMLButtonElement>(null);
   const contextRequestKey = useRef<string | null>(null);
   const comparisonRequestKey = useRef<string | null>(null);
+  const handledFindRequestRef = useRef(0);
 
   const selectedRepository =
     repositories.find((repository) => repository.id === selectedId) ?? null;
@@ -697,16 +717,32 @@ export function RepositoryWorkspace({
   }, [toast]);
 
   useEffect(() => {
-    function focusSearch(event: KeyboardEvent) {
-      if (aiTerminal) return;
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
-        event.preventDefault();
-        searchInputRef.current?.focus();
-      }
+    if (!openFileRequest) return;
+    setSelectedId(openFileRequest.repositoryId);
+    setTab("files");
+    setCommitScope("local");
+    setSelectedCommit(null);
+    setCompareRequest({ path: openFileRequest.path, scope: "working" });
+    setContextSearch("");
+    setRunMenuOpen(false);
+    setMobileOpen(false);
+  }, [openFileRequest]);
+
+  useEffect(() => {
+    if (!findRequest || handledFindRequestRef.current === findRequest) return;
+    handledFindRequestRef.current = findRequest;
+    if (aiTerminal || commitModalOpen) return;
+    if (compareRequest) {
+      setViewerFindRequest(findRequest);
+      return;
     }
-    window.addEventListener("keydown", focusSearch);
-    return () => window.removeEventListener("keydown", focusSearch);
-  }, [aiTerminal]);
+    contextSearchInputRef.current?.focus();
+  }, [
+    aiTerminal,
+    commitModalOpen,
+    compareRequest,
+    findRequest,
+  ]);
 
   useEffect(() => {
     setRunMenuOpen(false);
@@ -1558,17 +1594,28 @@ export function RepositoryWorkspace({
                   </button>
                 </div>
               )}
-              {tab !== "commits" && (
-                <label className="context-search">
-                  <Search size={13} />
-                  <input
-                    value={contextSearch}
-                    onChange={(event) => setContextSearch(event.target.value)}
-                    placeholder={tab === "changes" ? "Filter changed files" : "Filter files"}
-                    aria-label={tab === "changes" ? "Filter changed files" : "Filter files"}
-                  />
-                </label>
-              )}
+              <label className="context-search">
+                <Search size={13} />
+                <input
+                  ref={contextSearchInputRef}
+                  value={contextSearch}
+                  onChange={(event) => setContextSearch(event.target.value)}
+                  placeholder={
+                    tab === "changes"
+                      ? "Filter changed files"
+                      : tab === "commits"
+                        ? "Filter commits"
+                        : "Filter files"
+                  }
+                  aria-label={
+                    tab === "changes"
+                      ? "Filter changed files"
+                      : tab === "commits"
+                        ? "Filter commits"
+                        : "Filter files"
+                  }
+                />
+              </label>
               {tab === "commits" && (
                 <div className="commit-scope">
                   {(["local", "incoming", "outgoing"] as CommitScope[]).map((scope) => (
@@ -1628,6 +1675,7 @@ export function RepositoryWorkspace({
                   <CommitList
                     commits={commits}
                     selectedSha={selectedCommit}
+                    search={contextSearch}
                     onSelect={(commit) => {
                       setSelectedCommit(commit.sha);
                       setCompareRequest(null);
@@ -1725,7 +1773,10 @@ export function RepositoryWorkspace({
                   </div>
                 }
               >
-                <MonacoDiff comparison={comparison} />
+                <MonacoDiff
+                  comparison={comparison}
+                  findRequest={viewerFindRequest}
+                />
               </Suspense>
             </>
           ) : tab === "commits" && commitDetail ? (
@@ -1786,21 +1837,8 @@ export function RepositoryWorkspace({
               <span className="empty-orbit">
                 <GitCompareArrows size={25} />
               </span>
-              <p className="eyebrow">Side-by-side review</p>
-              <h2>
-                {selectedRepository?.summary.files
-                  ? "Choose a file to inspect its changes."
-                  : "Everything is in view."}
-              </h2>
-              <p>
-                {selectedRepository?.summary.files
-                  ? "The original appears on the left and your local version on the right."
-                  : "Select a commit or file to explore this repository."}
-              </p>
-              <div className="privacy-card">
-                <CircleDot size={14} />
-                File contents stay on this machine
-              </div>
+              <p className="eyebrow">Diff viewer</p>
+              <h2>No file selected</h2>
             </div>
           )}
         </section>
@@ -1842,6 +1880,7 @@ export function RepositoryWorkspace({
           session={aiTerminal.session}
           provider={aiTerminal.provider}
           action={aiTerminal.action}
+          findRequest={findRequest}
           onClose={() => void closeAiTerminal()}
         />
       )}
