@@ -33,18 +33,33 @@ describe("SettingsStore", () => {
     const store = new SettingsStore(settingsPath);
     await store.load();
 
-    await expect(store.setTheme("glass")).resolves.toEqual({ theme: "glass" });
+    await expect(store.setTheme("glass")).resolves.toEqual({
+      theme: "glass",
+      liquidGlassAppearance: "system",
+    });
     await expect(store.setTheme("neumorphic")).resolves.toEqual({
       theme: "neumorphic",
+      liquidGlassAppearance: "system",
     });
     await expect(store.setTheme("liquid-glass")).resolves.toEqual({
       theme: "liquid-glass",
+      liquidGlassAppearance: "system",
     });
+    await expect(store.setLiquidGlassAppearance("dark")).resolves.toEqual({
+      theme: "liquid-glass",
+      liquidGlassAppearance: "dark",
+    });
+    await expect(store.setLiquidGlassAppearance("unknown")).rejects.toThrow(
+      "Invalid Liquid Glass appearance.",
+    );
     await expect(store.setTheme("unknown")).rejects.toThrow("Invalid theme.");
 
     const restored = new SettingsStore(settingsPath);
     await restored.load();
-    expect(restored.preferences()).toEqual({ theme: "liquid-glass" });
+    expect(restored.preferences()).toEqual({
+      theme: "liquid-glass",
+      liquidGlassAppearance: "dark",
+    });
   });
 
   it("falls back to Green when a saved theme is unknown", async () => {
@@ -58,13 +73,17 @@ describe("SettingsStore", () => {
         recentWorkspaces: [],
         profiles: {},
         theme: "future-theme",
+        liquidGlassAppearance: "sepia",
       }),
     );
     const store = new SettingsStore(settingsPath);
 
     await store.load();
 
-    expect(store.preferences()).toEqual({ theme: "green" });
+    expect(store.preferences()).toEqual({
+      theme: "green",
+      liquidGlassAppearance: "system",
+    });
   });
 
   it("persists recent workspaces and profiles without storing environment values", async () => {

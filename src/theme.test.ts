@@ -3,7 +3,9 @@ import { MONACO_THEMES } from "./editor-themes";
 import {
   applyThemeAttributes,
   browserSystemAppearance,
+  DEFAULT_APPEARANCE_MODE,
   DEFAULT_THEME,
+  normalizeAppearanceMode,
   normalizeTheme,
   resolveColorScheme,
   THEME_DEFINITIONS,
@@ -35,6 +37,10 @@ describe("theme registry", () => {
     expect(normalizeTheme("liquid-glass")).toBe("liquid-glass");
     expect(normalizeTheme("unknown")).toBe(DEFAULT_THEME);
     expect(normalizeTheme(null)).toBe(DEFAULT_THEME);
+    expect(normalizeAppearanceMode("light")).toBe("light");
+    expect(normalizeAppearanceMode("dark")).toBe("dark");
+    expect(normalizeAppearanceMode("system")).toBe("system");
+    expect(normalizeAppearanceMode("unknown")).toBe(DEFAULT_APPEARANCE_MODE);
   });
 
   it("applies palette, material, layout, and color scheme together", () => {
@@ -56,11 +62,15 @@ describe("theme registry", () => {
       "true",
     );
 
-    applyThemeAttributes("liquid-glass", {
-      colorScheme: "light",
-      reducedTransparency: false,
-      highContrast: false,
-    });
+    applyThemeAttributes(
+      "liquid-glass",
+      {
+        colorScheme: "light",
+        reducedTransparency: false,
+        highContrast: false,
+      },
+      "dark",
+    );
     expect(document.documentElement).toHaveAttribute(
       "data-material",
       "liquid-glass",
@@ -71,9 +81,13 @@ describe("theme registry", () => {
     );
     expect(document.documentElement).toHaveAttribute(
       "data-color-scheme",
-      "light",
+      "dark",
     );
-    expect(document.documentElement.style.colorScheme).toBe("light");
+    expect(document.documentElement).toHaveAttribute(
+      "data-appearance-mode",
+      "dark",
+    );
+    expect(document.documentElement.style.colorScheme).toBe("dark");
 
     applyThemeAttributes("light", {
       colorScheme: "dark",
@@ -92,6 +106,12 @@ describe("theme registry", () => {
       highContrast: false,
     };
     expect(resolveColorScheme("liquid-glass", darkAppearance)).toBe("dark");
+    expect(
+      resolveColorScheme("liquid-glass", darkAppearance, "light"),
+    ).toBe("light");
+    expect(
+      resolveColorScheme("liquid-glass", darkAppearance, "dark"),
+    ).toBe("dark");
     expect(resolveColorScheme("light", darkAppearance)).toBe("light");
     expect(browserSystemAppearance()).toMatchObject({
       reducedTransparency: false,

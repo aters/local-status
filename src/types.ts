@@ -1,6 +1,11 @@
-import type { SystemAppearance, Theme } from "./theme";
+import type { AppearanceMode, SystemAppearance, Theme } from "./theme";
 
-export type { ResolvedColorScheme, SystemAppearance, Theme } from "./theme";
+export type {
+  AppearanceMode,
+  ResolvedColorScheme,
+  SystemAppearance,
+  Theme,
+} from "./theme";
 
 export type ChangeScope =
   | "conflict"
@@ -31,6 +36,7 @@ export interface WorkspaceState {
 
 export interface Preferences {
   theme: Theme;
+  liquidGlassAppearance: AppearanceMode;
 }
 
 export interface Commit {
@@ -454,6 +460,7 @@ export interface LocalStatusBridge {
   preferences: {
     get(): Promise<Preferences>;
     setTheme(theme: Theme): Promise<Preferences>;
+    setLiquidGlassAppearance(appearance: AppearanceMode): Promise<Preferences>;
   };
   appearance?: {
     get(): Promise<SystemAppearance>;

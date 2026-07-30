@@ -6,6 +6,7 @@ const SETTINGS_VERSION = 6;
 const MAX_RECENT_WORKSPACES = 8;
 const MAX_REPOSITORY_NAME_LENGTH = 80;
 const THEMES = new Set(Object.keys(themeManifest));
+const APPEARANCE_MODES = new Set(["light", "dark", "system"]);
 
 function defaults() {
   return {
@@ -15,6 +16,7 @@ function defaults() {
     repositoryNames: {},
     profiles: {},
     theme: "green",
+    liquidGlassAppearance: "system",
     favouriteRepositoryGroups: {},
     archivedRepositoryGroups: {},
     archivedRepositories: {},
@@ -101,6 +103,9 @@ function parseSettings(value) {
         : {},
     profiles,
     theme: THEMES.has(value.theme) ? value.theme : "green",
+    liquidGlassAppearance: APPEARANCE_MODES.has(value.liquidGlassAppearance)
+      ? value.liquidGlassAppearance
+      : "system",
     favouriteRepositoryGroups:
       value.favouriteRepositoryGroups &&
       typeof value.favouriteRepositoryGroups === "object"
@@ -245,12 +250,24 @@ export class SettingsStore {
   }
 
   preferences() {
-    return { theme: this.data.theme };
+    return {
+      theme: this.data.theme,
+      liquidGlassAppearance: this.data.liquidGlassAppearance,
+    };
   }
 
   async setTheme(theme) {
     if (!THEMES.has(theme)) throw new Error("Invalid theme.");
     this.data.theme = theme;
+    await this.save();
+    return this.preferences();
+  }
+
+  async setLiquidGlassAppearance(appearance) {
+    if (!APPEARANCE_MODES.has(appearance)) {
+      throw new Error("Invalid Liquid Glass appearance.");
+    }
+    this.data.liquidGlassAppearance = appearance;
     await this.save();
     return this.preferences();
   }

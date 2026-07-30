@@ -344,7 +344,7 @@ test("renders a cohesive light theme across repository surfaces", async ({
   await window.setViewportSize({ width: 1440, height: 900 });
 
   await window.getByRole("button", { name: "Settings" }).click();
-  await window.getByRole("radio", { name: /Light/ }).click();
+  await window.getByRole("radio", { name: "Light theme" }).click();
   await expect(window.locator("html")).toHaveAttribute("data-theme", "light");
   await window.getByRole("button", { name: "Repositories" }).click();
   await window.getByText("changed-web").first().click();
@@ -392,7 +392,7 @@ test("renders a cohesive dark theme across repository surfaces", async ({
   await window.setViewportSize({ width: 1440, height: 900 });
 
   await window.getByRole("button", { name: "Settings" }).click();
-  await window.getByRole("radio", { name: /Dark/ }).click();
+  await window.getByRole("radio", { name: "Dark theme" }).click();
   await expect(window.locator("html")).toHaveAttribute("data-theme", "dark");
   await window.getByRole("button", { name: "Repositories" }).click();
   await window.getByText("changed-web").first().click();
@@ -452,8 +452,14 @@ test("renders and persists the Glass and Neumorphic theme systems", async ({
   await window.setViewportSize({ width: 1440, height: 900 });
 
   await window.getByRole("button", { name: "Settings" }).click();
-  await expect(window.getByRole("radio")).toHaveCount(6);
-  await window.getByRole("radio", { name: /^Glass\b/ }).click();
+  await expect(
+    window
+      .getByRole("radiogroup", { name: "Theme" })
+      .locator(':scope > .theme-card > [role="radio"]'),
+  ).toHaveCount(6);
+  await window
+    .getByRole("radio", { name: "Glass theme", exact: true })
+    .click();
   await expect(window.locator("html")).toHaveAttribute("data-theme", "glass");
   await expect(window.locator("html")).toHaveAttribute("data-material", "glass");
   await expect(window.locator("html")).toHaveAttribute("data-layout", "floating");
@@ -587,7 +593,7 @@ test("renders and persists the Glass and Neumorphic theme systems", async ({
   await window.keyboard.press("Escape");
 
   await window.getByRole("button", { name: "Settings" }).click();
-  await window.getByRole("radio", { name: /Neumorphic/ }).click();
+  await window.getByRole("radio", { name: "Neumorphic theme" }).click();
   await expect(window.locator("html")).toHaveAttribute(
     "data-theme",
     "neumorphic",
@@ -758,9 +764,17 @@ test("renders adaptive Liquid Glass across workflows and accessibility states", 
   await window.setViewportSize({ width: 1440, height: 900 });
 
   await window.getByRole("button", { name: "Settings" }).click();
-  await expect(window.getByRole("radio")).toHaveCount(6);
-  await expect(window.getByText("Follows system")).toBeVisible();
-  await window.getByRole("radio", { name: /^Liquid Glass\b/ }).click();
+  const themeGroup = window.getByRole("radiogroup", { name: "Theme" });
+  await expect(
+    themeGroup.locator(':scope > .theme-card > [role="radio"]'),
+  ).toHaveCount(6);
+  const liquidGlassAppearance = window.getByRole("radiogroup", {
+    name: "Liquid Glass appearance",
+  });
+  await expect(
+    liquidGlassAppearance.getByRole("radio", { name: "System" }),
+  ).toHaveAttribute("aria-checked", "true");
+  await window.getByRole("radio", { name: "Liquid Glass theme" }).click();
   const root = window.locator("html");
   await expect(root).toHaveAttribute("data-theme", "liquid-glass");
   await expect(root).toHaveAttribute("data-material", "liquid-glass");
@@ -771,6 +785,26 @@ test("renders adaptive Liquid Glass across workflows and accessibility states", 
   expect(await root.evaluate((element) => element.style.colorScheme)).toBe(
     "light",
   );
+  await liquidGlassAppearance.getByRole("radio", { name: "Dark" }).click();
+  await expect(root).toHaveAttribute("data-appearance-mode", "dark");
+  await expect(root).toHaveAttribute("data-color-scheme", "dark");
+  await window.screenshot({
+    path: testInfo.outputPath("liquid-glass-dark-settings.png"),
+    animations: "disabled",
+  });
+  await window.reload();
+  await expect(root).toHaveAttribute("data-theme", "liquid-glass");
+  await expect(root).toHaveAttribute("data-appearance-mode", "dark");
+  await expect(root).toHaveAttribute("data-color-scheme", "dark");
+  await expect(
+    liquidGlassAppearance.getByRole("radio", { name: "Dark" }),
+  ).toHaveAttribute("aria-checked", "true");
+  await liquidGlassAppearance.getByRole("radio", { name: "Light" }).click();
+  await expect(root).toHaveAttribute("data-appearance-mode", "light");
+  await expect(root).toHaveAttribute("data-color-scheme", "light");
+  await liquidGlassAppearance.getByRole("radio", { name: "System" }).click();
+  await expect(root).toHaveAttribute("data-appearance-mode", "system");
+  await expect(root).toHaveAttribute("data-color-scheme", "light");
   const themeCardRows = await window.locator(".theme-card").evaluateAll((cards) =>
     cards.map((card) => Math.round(card.getBoundingClientRect().top)),
   );
@@ -828,6 +862,11 @@ test("renders adaptive Liquid Glass across workflows and accessibility states", 
   expect(lightMaterials.headerRadius).toBeGreaterThanOrEqual(24);
   expect(lightMaterials.panelGaps.every((gap) => gap > 0)).toBe(true);
   expect(lightMaterials.document).toBe(lightMaterials.viewport);
+  expect(
+    await window.getByLabel("Find a repository").evaluate((element) =>
+      getComputedStyle(element, "::placeholder").color,
+    ),
+  ).toBe("rgb(98, 98, 103)");
   const repositoryFilterMaterial = await window.evaluate(() => {
     const strip = document.querySelector<HTMLElement>(".filter-strip")!;
     const active = strip.querySelector<HTMLElement>("button.is-active")!;
@@ -984,6 +1023,28 @@ test("renders adaptive Liquid Glass across workflows and accessibility states", 
   });
   await window.keyboard.press("Escape");
   await window.getByRole("button", { name: "Repositories" }).click();
+  expect(
+    await window.getByLabel("Find a repository").evaluate((element) =>
+      getComputedStyle(element, "::placeholder").color,
+    ),
+  ).toBe("rgb(152, 152, 157)");
+  await window.getByText("clean-api").first().click();
+  const cleanEmptyState = window.locator(".panel-empty--large").filter({
+    hasText: "Working tree clean",
+  });
+  await expect(cleanEmptyState).toBeVisible();
+  await expect(cleanEmptyState.locator("svg")).toHaveCSS(
+    "color",
+    "rgb(152, 152, 157)",
+  );
+  await expect(cleanEmptyState.locator("span")).toHaveCSS(
+    "color",
+    "rgb(152, 152, 157)",
+  );
+  await window.screenshot({
+    path: testInfo.outputPath("liquid-glass-dark-empty-state.png"),
+    animations: "disabled",
+  });
   await window.getByText("changed-web").first().click();
   await window.locator('.change-row__select[title="README.md"]').click();
   await expect(

@@ -67,6 +67,8 @@ contextBridge.exposeInMainWorld("localStatus", {
   preferences: {
     get: () => invoke("preferences:get"),
     setTheme: (theme) => invoke("preferences:set-theme", { theme }),
+    setLiquidGlassAppearance: (appearance) =>
+      invoke("preferences:set-liquid-glass-appearance", { appearance }),
   },
   appearance: {
     get: () => invoke("appearance:get"),

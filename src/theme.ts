@@ -5,6 +5,7 @@ export type ThemeMaterial = "flat" | "glass" | "neumorphic" | "liquid-glass";
 export type ThemeLayout = "edge" | "floating" | "sculpted" | "immersive";
 export type ResolvedColorScheme = "light" | "dark";
 export type ThemeColorScheme = ResolvedColorScheme | "system";
+export type AppearanceMode = ThemeColorScheme;
 
 export interface SystemAppearance {
   colorScheme: ResolvedColorScheme;
@@ -23,6 +24,7 @@ export interface ThemeDefinition {
 }
 
 export const DEFAULT_THEME: Theme = "green";
+export const DEFAULT_APPEARANCE_MODE: AppearanceMode = "system";
 
 export const THEME_DEFINITIONS =
   manifest as Record<Theme, ThemeDefinition>;
@@ -37,6 +39,14 @@ export function isTheme(value: unknown): value is Theme {
 
 export function normalizeTheme(value: unknown): Theme {
   return isTheme(value) ? value : DEFAULT_THEME;
+}
+
+export function isAppearanceMode(value: unknown): value is AppearanceMode {
+  return value === "light" || value === "dark" || value === "system";
+}
+
+export function normalizeAppearanceMode(value: unknown): AppearanceMode {
+  return isAppearanceMode(value) ? value : DEFAULT_APPEARANCE_MODE;
 }
 
 export function getThemeDefinition(theme: Theme): ThemeDefinition {
@@ -58,22 +68,27 @@ export function browserSystemAppearance(): SystemAppearance {
 export function resolveColorScheme(
   theme: Theme,
   appearance: SystemAppearance,
+  appearanceMode: AppearanceMode = DEFAULT_APPEARANCE_MODE,
 ): ResolvedColorScheme {
   const configured = getThemeDefinition(theme).colorScheme;
-  return configured === "system" ? appearance.colorScheme : configured;
+  if (configured !== "system") return configured;
+  return appearanceMode === "system" ? appearance.colorScheme : appearanceMode;
 }
 
 export function applyThemeAttributes(
   theme: Theme,
   appearance: SystemAppearance = browserSystemAppearance(),
+  appearanceMode: AppearanceMode = DEFAULT_APPEARANCE_MODE,
   root: HTMLElement = document.documentElement,
 ) {
   const definition = getThemeDefinition(theme);
-  const colorScheme = resolveColorScheme(theme, appearance);
+  const colorScheme = resolveColorScheme(theme, appearance, appearanceMode);
   root.dataset.theme = theme;
   root.dataset.material = definition.material;
   root.dataset.layout = definition.layout;
   root.dataset.colorScheme = colorScheme;
+  root.dataset.appearanceMode =
+    definition.colorScheme === "system" ? appearanceMode : definition.colorScheme;
   root.dataset.reducedTransparency = String(appearance.reducedTransparency);
   root.dataset.highContrast = String(appearance.highContrast);
   root.style.colorScheme = colorScheme;

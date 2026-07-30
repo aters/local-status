@@ -5914,6 +5914,7 @@ button.workspace-menu__item:focus-visible {
   position: relative;
   display: grid;
   min-width: 0;
+  grid-template-rows: 1fr auto;
   gap: 12px;
   padding: 12px;
   border: 1px solid var(--line);
@@ -5921,7 +5922,29 @@ button.workspace-menu__item:focus-visible {
   color: var(--text);
   background: var(--surface-1);
   text-align: left;
+}
+
+.theme-card__select {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  align-content: start;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
   cursor: pointer;
+}
+
+.theme-card__select:disabled {
+  cursor: wait;
+}
+
+.theme-card__select:focus-visible {
+  border-radius: 8px;
+  outline-offset: 4px;
 }
 
 .theme-card:hover {
@@ -6009,6 +6032,48 @@ button.workspace-menu__item:focus-visible {
   color: var(--text-muted);
   font-size: var(--font-meta);
   line-height: 1.45;
+}
+
+.theme-appearance-switch {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-0) 78%, transparent);
+  box-shadow: inset 0 1px 3px color-mix(in srgb, black 16%, transparent);
+}
+
+.theme-appearance-switch button {
+  min-width: 0;
+  padding: 5px 3px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.theme-appearance-switch button:hover:not(:disabled) {
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface-3) 54%, transparent);
+}
+
+.theme-appearance-switch button.is-active {
+  border-color: color-mix(in srgb, var(--line) 72%, white 10%);
+  color: var(--text);
+  background: var(--surface-3);
+  box-shadow:
+    0 1px 4px color-mix(in srgb, black 22%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 20%, transparent);
+}
+
+.theme-appearance-switch button:disabled {
+  cursor: wait;
 }
 
 .theme-card__check {

@@ -1224,6 +1224,23 @@
   color: var(--text-muted);
 }
 
+:root[data-material="liquid-glass"] input::placeholder,
+:root[data-material="liquid-glass"] textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+:root[data-material="liquid-glass"]
+  :where(
+    .panel-empty--large:not(.is-error) svg,
+    .panel-empty--large span,
+    .change-group__toggle > small,
+    .tree-chevron,
+    .tree-file-icon
+  ) {
+  color: var(--text-muted);
+}
+
 :root[data-material="liquid-glass"] .viewer-empty :is(h2, h3) {
   color: var(--text);
 }

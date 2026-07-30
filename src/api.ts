@@ -1,5 +1,9 @@
 import type { CommitScope, LocalStatusBridge } from "./types";
-import { browserSystemAppearance, normalizeTheme } from "./theme";
+import {
+  browserSystemAppearance,
+  normalizeAppearanceMode,
+  normalizeTheme,
+} from "./theme";
 import type { SystemAppearance } from "./theme";
 
 function bridge(): LocalStatusBridge {
@@ -77,9 +81,28 @@ export const api = {
     bridge().preferences?.get() ??
     Promise.resolve({
       theme: normalizeTheme(window.localStorage.getItem("local-status:theme")),
+      liquidGlassAppearance: normalizeAppearanceMode(
+        window.localStorage.getItem("local-status:liquid-glass-appearance"),
+      ),
     }),
   setTheme: (theme: Parameters<LocalStatusBridge["preferences"]["setTheme"]>[0]) =>
-    bridge().preferences?.setTheme(theme) ?? Promise.resolve({ theme }),
+    bridge().preferences?.setTheme(theme) ??
+    Promise.resolve({
+      theme,
+      liquidGlassAppearance: normalizeAppearanceMode(
+        window.localStorage.getItem("local-status:liquid-glass-appearance"),
+      ),
+    }),
+  setLiquidGlassAppearance: (
+    appearance: Parameters<
+      LocalStatusBridge["preferences"]["setLiquidGlassAppearance"]
+    >[0],
+  ) =>
+    bridge().preferences?.setLiquidGlassAppearance(appearance) ??
+    Promise.resolve({
+      theme: normalizeTheme(window.localStorage.getItem("local-status:theme")),
+      liquidGlassAppearance: appearance,
+    }),
   appearance: () =>
     window.localStatus?.appearance?.get() ??
     Promise.resolve(browserSystemAppearance()),

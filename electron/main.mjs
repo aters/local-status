@@ -132,18 +132,35 @@ function systemAppearance() {
   };
 }
 
-function windowBackground(theme, appearance = systemAppearance()) {
+function windowBackground(
+  theme,
+  appearance = systemAppearance(),
+  liquidGlassAppearance = "system",
+) {
   const definition = themeManifest[theme] ?? themeManifest.green;
   const resolvedScheme =
     definition.colorScheme === "system"
-      ? appearance.colorScheme
+      ? liquidGlassAppearance === "light" || liquidGlassAppearance === "dark"
+        ? liquidGlassAppearance
+        : appearance.colorScheme
       : definition.colorScheme;
   return definition.windowBackground[resolvedScheme];
 }
 
-function updateWindowAppearance(theme = settingsStore?.preferences().theme) {
+function updateWindowAppearance(
+  preferences = settingsStore?.preferences() ?? {
+    theme: "green",
+    liquidGlassAppearance: "system",
+  },
+) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.setBackgroundColor(windowBackground(theme ?? "green"));
+  mainWindow.setBackgroundColor(
+    windowBackground(
+      preferences.theme,
+      systemAppearance(),
+      preferences.liquidGlassAppearance,
+    ),
+  );
 }
 
 function broadcastSystemAppearance() {
@@ -856,7 +873,18 @@ function registerIpc() {
     const preferences = await settingsStore.setTheme(
       requireString(requireObject(payload).theme, "theme", 20),
     );
-    updateWindowAppearance(preferences.theme);
+    updateWindowAppearance(preferences);
+    return preferences;
+  });
+  handle("preferences:set-liquid-glass-appearance", async (payload) => {
+    const preferences = await settingsStore.setLiquidGlassAppearance(
+      requireString(
+        requireObject(payload).appearance,
+        "Liquid Glass appearance",
+        10,
+      ),
+    );
+    updateWindowAppearance(preferences);
     return preferences;
   });
   handle("appearance:get", () => systemAppearance());
@@ -1018,6 +1046,10 @@ async function registerRendererProtocol() {
 
 async function createWindow() {
   const appearance = systemAppearance();
+  const preferences = settingsStore?.preferences() ?? {
+    theme: "green",
+    liquidGlassAppearance: "system",
+  };
   mainWindow = new BrowserWindow({
     title: "Local Status",
     icon: appIconPath,
@@ -1026,8 +1058,9 @@ async function createWindow() {
     minWidth: 820,
     minHeight: 620,
     backgroundColor: windowBackground(
-      settingsStore?.preferences().theme ?? "green",
+      preferences.theme,
       appearance,
+      preferences.liquidGlassAppearance,
     ),
     show: false,
     webPreferences: {

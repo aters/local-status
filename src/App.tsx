@@ -22,10 +22,12 @@ import {
   applyThemeAttributes,
   browserSystemAppearance,
   getThemeDefinition,
+  normalizeAppearanceMode,
   normalizeTheme,
   resolveColorScheme,
 } from "./theme";
 import type {
+  AppearanceMode,
   AiProvider,
   AiTerminalAction,
   AppShortcut,
@@ -144,11 +146,19 @@ export function App() {
   const [appearance, setAppearance] = useState<SystemAppearance>(
     browserSystemAppearance,
   );
+  const [liquidGlassAppearance, setLiquidGlassAppearance] =
+    useState<AppearanceMode>(() =>
+      normalizeAppearanceMode(
+        window.localStorage.getItem(
+          "local-status:liquid-glass-appearance",
+        ),
+      ),
+    );
   const [theme, setTheme] = useState<Theme>(() => {
     const initial = normalizeTheme(
       window.localStorage.getItem("local-status:theme"),
     );
-    applyThemeAttributes(initial, appearance);
+    applyThemeAttributes(initial, appearance, liquidGlassAppearance);
     return initial;
   });
   const [workspace, setWorkspace] = useState<WorkspaceState | null>(null);
@@ -166,7 +176,11 @@ export function App() {
     (WorkspaceFile & { requestId: number }) | null
   >(null);
   const workspacePath = workspace?.current?.path ?? null;
-  const resolvedColorScheme = resolveColorScheme(theme, appearance);
+  const resolvedColorScheme = resolveColorScheme(
+    theme,
+    appearance,
+    liquidGlassAppearance,
+  );
 
   const refreshRepositories = useCallback(async () => {
     setRepositoryError(null);
@@ -211,14 +225,21 @@ export function App() {
   useEffect(() => {
     void api
       .preferences()
-      .then((preferences) => setTheme(preferences.theme))
+      .then((preferences) => {
+        setTheme(preferences.theme);
+        setLiquidGlassAppearance(preferences.liquidGlassAppearance);
+      })
       .catch(() => undefined);
   }, []);
 
   useEffect(() => {
-    applyThemeAttributes(theme, appearance);
+    applyThemeAttributes(theme, appearance, liquidGlassAppearance);
     window.localStorage.setItem("local-status:theme", theme);
-  }, [appearance, theme]);
+    window.localStorage.setItem(
+      "local-status:liquid-glass-appearance",
+      liquidGlassAppearance,
+    );
+  }, [appearance, liquidGlassAppearance, theme]);
 
   useEffect(() => {
     let active = true;
@@ -433,6 +454,26 @@ export function App() {
     }
   }
 
+  async function changeLiquidGlassAppearance(next: AppearanceMode) {
+    const previous = liquidGlassAppearance;
+    setLiquidGlassAppearance(next);
+    try {
+      const preferences = await api.setLiquidGlassAppearance(next);
+      setLiquidGlassAppearance(preferences.liquidGlassAppearance);
+    } catch (caught) {
+      if (
+        caught instanceof Error &&
+        /no handler registered|preferences.*undefined|cannot read properties/i.test(
+          caught.message,
+        )
+      ) {
+        return;
+      }
+      setLiquidGlassAppearance(previous);
+      throw caught;
+    }
+  }
+
   async function startTerminal(
     repositoryId: string,
     kind: TerminalKind,
@@ -607,7 +648,12 @@ export function App() {
           findRequest={findRequest}
         />
       ) : (
-        <SettingsView theme={theme} onThemeChange={changeTheme} />
+        <SettingsView
+          theme={theme}
+          liquidGlassAppearance={liquidGlassAppearance}
+          onThemeChange={changeTheme}
+          onLiquidGlassAppearanceChange={changeLiquidGlassAppearance}
+        />
       )}
       <QuickOpen
         open={quickOpenOpen}
