@@ -59,6 +59,8 @@ export const api = {
     stashRef: string,
     mode: "apply" | "pop",
   ) => bridge().repositories.stashAction(repositoryId, stashRef, mode),
+  pullRequests: () => bridge().pullRequests.list(),
+  openPullRequest: (url: string) => bridge().pullRequests.open(url),
   preferences: () =>
     bridge().preferences?.get() ??
     Promise.resolve({

@@ -340,7 +340,11 @@ describe("Local Status", () => {
       expect(window.localStatus.workspace.choose).toHaveBeenCalledOnce(),
     );
     expect(window.localStatus.repositories.list).toHaveBeenCalledOnce();
-    expect(screen.getByText("changed-web")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("listbox", { name: "Repositories" })).getByText(
+        "changed-web",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("shows repository health, filters changes, and focuses global search", async () => {
@@ -353,10 +357,10 @@ describe("Local Status", () => {
     expect(screen.queryByText("Not fetched this session")).not.toBeInTheDocument();
     expect(screen.getByText("2", { selector: ".status-badge--incoming" })).toBeVisible();
     expect(
-      screen.getByRole("option", { name: /changed-web/ }),
+      screen.getByRole("option", { name: /changed-web/ }).closest(".repository-row"),
     ).toHaveClass("repository-row--changed");
     expect(
-      screen.getByRole("option", { name: /clean-api/ }),
+      screen.getByRole("option", { name: /clean-api/ }).closest(".repository-row"),
     ).toHaveClass("repository-row--clean");
 
     const repositoryPanel = screen.getByRole("listbox", { name: "Repositories" });
@@ -383,7 +387,7 @@ describe("Local Status", () => {
     });
 
     await user.click(
-      screen.getByRole("option", { name: /changed-web feature/ }),
+      screen.getByRole("option", { name: /changed-web/ }),
     );
     await user.click(
       screen.getByRole("button", { name: "New terminal in this repository" }),
@@ -468,6 +472,47 @@ describe("Local Status", () => {
     expect(screen.queryByText("Untracked")).not.toBeInTheDocument();
     expect(screen.getByText("App.tsx")).toBeVisible();
     expect(screen.getByText("NewPanel.tsx")).toBeVisible();
+  });
+
+  it("finishes loading changes when a repository refresh supersedes the initial request", async () => {
+    type ChangesResponse = Awaited<
+      ReturnType<LocalStatusBridge["repositories"]["changes"]>
+    >;
+    let resolveInitialChanges!: (response: ChangesResponse) => void;
+    const initialChanges = new Promise<ChangesResponse>((resolve) => {
+      resolveInitialChanges = resolve;
+    });
+    vi.mocked(
+      window.localStatus.repositories.changes,
+    ).mockImplementationOnce(() => initialChanges);
+
+    render(<App />);
+
+    await waitFor(() =>
+      expect(window.localStatus.repositories.changes).toHaveBeenCalledOnce(),
+    );
+    expect(screen.getByLabelText("Loading")).toBeVisible();
+
+    vi.mocked(window.localStatus.repositories.list).mockResolvedValueOnce(
+      {
+        ...repositories,
+        generatedAt: "2099-01-01T00:00:00.000Z",
+      } as unknown as Awaited<
+        ReturnType<LocalStatusBridge["repositories"]["list"]>
+      >,
+    );
+    fireEvent.focus(window);
+
+    await waitFor(() =>
+      expect(window.localStatus.repositories.changes).toHaveBeenCalledTimes(2),
+    );
+    expect(await screen.findByText("Unstaged")).toBeVisible();
+    expect(screen.queryByLabelText("Loading")).not.toBeInTheDocument();
+
+    resolveInitialChanges({
+      repositoryId: "changed-web",
+      changes: [],
+    });
   });
 
   it("automatically dismisses change confirmations", async () => {

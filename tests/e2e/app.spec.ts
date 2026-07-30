@@ -252,6 +252,65 @@ test("renders a cohesive light theme across repository surfaces", async ({
   await browser.close();
 });
 
+test("renders a cohesive dark theme across repository surfaces", async ({
+}, testInfo) => {
+  const browser = await launchDesktop(9336);
+  const window = browser.contexts()[0].pages()[0];
+  await window.setViewportSize({ width: 1440, height: 900 });
+
+  await window.getByRole("button", { name: "Settings" }).click();
+  await window.getByRole("radio", { name: /Dark/ }).click();
+  await expect(window.locator("html")).toHaveAttribute("data-theme", "dark");
+  await window.getByRole("button", { name: "Repositories" }).click();
+  await window.getByText("changed-web").first().click();
+  await expect(window.getByRole("heading", { name: "changed-web" })).toBeVisible();
+
+  const colors = await window.evaluate(() => {
+    const background = (selector: string) =>
+      getComputedStyle(document.querySelector<HTMLElement>(selector)!).backgroundColor;
+    const foreground = (selector: string) =>
+      getComputedStyle(document.querySelector<HTMLElement>(selector)!).color;
+    return {
+      header: background(".app-header"),
+      navigation: background(".app-nav"),
+      activeNavigation: background(".app-nav button.is-active"),
+      summary: background(".overview-stats"),
+      repositories: background(".repo-panel"),
+      changes: background(".context-panel"),
+      viewer: background(".viewer-empty"),
+      viewerHeading: foreground(".viewer-empty h2"),
+    };
+  });
+
+  expect(colors).toMatchObject({
+    header: "rgba(29, 29, 29, 0.94)",
+    navigation: "rgb(35, 35, 35)",
+    activeNavigation: "rgb(29, 49, 40)",
+    summary: "rgb(35, 35, 35)",
+    repositories: "rgb(29, 29, 29)",
+    changes: "rgb(29, 29, 29)",
+    viewer: "rgb(35, 35, 35)",
+    viewerHeading: "rgb(241, 241, 241)",
+  });
+
+  await window.screenshot({
+    path: testInfo.outputPath("dark-theme.png"),
+    animations: "disabled",
+  });
+
+  await window.locator('.change-row__select[title="README.md"]').click();
+  const darkEditor = window.locator(".monaco-diff-editor .editor");
+  await expect(darkEditor).toHaveCount(2);
+  await expect(
+    window.locator(".editor.original .lines-content.monaco-editor-background"),
+  ).toHaveCSS("background-color", "rgb(23, 23, 23)");
+  await window.screenshot({
+    path: testInfo.outputPath("dark-diff.png"),
+    animations: "disabled",
+  });
+  await browser.close();
+});
+
 test("opens repositories, renders a side-by-side diff, and runs an interactive service", async ({
 }, testInfo) => {
   const browser = await launchDesktop(9333);

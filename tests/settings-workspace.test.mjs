@@ -94,7 +94,7 @@ describe("SettingsStore", () => {
 
     await store.load();
 
-    expect(store.data.version).toBe(3);
+    expect(store.data.version).toBe(5);
     expect(store.data.lastWorkspacePath).toBe("/tmp/legacy-workspace");
     expect(store.profilesFor("/tmp/legacy-workspace")).toHaveLength(1);
     expect(store.aiSettings()).toEqual({

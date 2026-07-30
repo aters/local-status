@@ -47,6 +47,10 @@ contextBridge.exposeInMainWorld("localStatus", {
     stashAction: (repositoryId, stashRef, mode) =>
       invoke("repositories:stash-action", { repositoryId, stashRef, mode }),
   },
+  pullRequests: {
+    list: () => invoke("pull-requests:list"),
+    open: (url) => invoke("pull-requests:open", { url }),
+  },
   preferences: {
     get: () => invoke("preferences:get"),
     setTheme: (theme) => invoke("preferences:set-theme", { theme }),

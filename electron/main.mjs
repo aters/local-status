@@ -20,6 +20,7 @@ import {
   comparisonContents,
   createCommit,
   applyRepositoryStash,
+  discoverRepositories,
   fetchAll,
   fetchOne,
   getRepository,
@@ -41,6 +42,10 @@ import {
 import { AiRunner } from "./codex-runner.mjs";
 import { discoverScripts } from "./script-discovery.mjs";
 import { applicationMenuTemplate } from "./application-menu.mjs";
+import {
+  GithubService,
+  validatePullRequestUrl,
+} from "./github-service.mjs";
 import { SettingsStore } from "./settings-store.mjs";
 import { TerminalManager } from "./terminal-manager.mjs";
 import { WorkspaceManager } from "./workspace-manager.mjs";
@@ -83,6 +88,7 @@ let settingsStore;
 let workspaceManager;
 let terminalManager;
 let aiRunner;
+let githubService;
 let quitting = false;
 
 function configureApplicationIdentity() {
@@ -557,6 +563,19 @@ function registerIpc() {
     );
   });
 
+  handle("pull-requests:list", async () => {
+    const repositories = await discoverRepositories({ refresh: true });
+    return githubService.list([...repositories.values()], {
+      excludeGroupIds: settingsStore.archivedGroupsFor(getWorkspaceRoot()),
+    });
+  });
+  handle("pull-requests:open", async (payload) => {
+    const url = validatePullRequestUrl(
+      requireString(requireObject(payload).url, "pull request URL", 2_048),
+    );
+    await shell.openExternal(url);
+  });
+
   handle("preferences:get", () => settingsStore.preferences());
   handle("preferences:set-theme", (payload) =>
     settingsStore.setTheme(
@@ -767,6 +786,7 @@ async function startApplication() {
     schemaPath: commitMessageSchemaPath,
     temporaryDirectory: app.getPath("temp"),
   });
+  githubService = new GithubService();
   workspaceManager = new WorkspaceManager(settingsStore);
   await workspaceManager.restore();
   if (process.env.LOCAL_STATUS_TEST_WORKSPACE) {

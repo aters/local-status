@@ -479,7 +479,7 @@ function RepositoryNavigator({
           className="repository-row__branch"
           type="button"
           aria-label={`Switch branch for ${repository.id}`}
-          data-tooltip={`Switch branch for ${repository.id}`}
+          data-tooltip="Switch branch"
           disabled={repository.archived}
           onClick={(event) => onOpenBranches(repository.id, event.currentTarget)}
         >
@@ -1347,7 +1347,7 @@ export function RepositoryWorkspace({
         }
       })
       .finally(() => {
-        if (!cancelled && changedView) setContextLoading(false);
+        if (!cancelled) setContextLoading(false);
       });
     return () => {
       cancelled = true;
@@ -2145,6 +2145,7 @@ export function RepositoryWorkspace({
                       className="repository-header__branch"
                       type="button"
                       aria-label={`Switch branch for ${selectedRepository.id}`}
+                      data-tooltip="Switch branch"
                       onClick={(event) =>
                         void openBranchPicker(
                           selectedRepository.id,

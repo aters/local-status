@@ -1,6 +1,7 @@
 import {
   FolderOpen,
   GitBranch,
+  GitPullRequest,
   Settings,
   HardDrive,
   LockKeyhole,
@@ -10,6 +11,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import { RepositoryWorkspace } from "./components/RepositoryWorkspace";
+import { PullRequestsView } from "./components/PullRequestsView";
 import { ServicesView } from "./components/ServicesView";
 import { SettingsView } from "./components/SettingsView";
 import { AppTooltip } from "./components/AppTooltip";
@@ -24,7 +26,7 @@ import type {
   WorkspaceState,
 } from "./types";
 
-type AppView = "repositories" | "services" | "settings";
+type AppView = "repositories" | "pull-requests" | "services" | "settings";
 
 function ProductLogo({ className }: { className: string }) {
   return (
@@ -40,7 +42,11 @@ function ProductLogo({ className }: { className: string }) {
 
 function initialView(): AppView {
   const value = routeParams().get("view");
-  return value === "services" || value === "settings" ? value : "repositories";
+  return value === "pull-requests" ||
+    value === "services" ||
+    value === "settings"
+    ? value
+    : "repositories";
 }
 
 function shellArgument(value: string) {
@@ -355,6 +361,14 @@ export function App() {
           </button>
           <button
             type="button"
+            className={view === "pull-requests" ? "is-active" : ""}
+            onClick={() => selectView("pull-requests")}
+          >
+            <GitPullRequest size={15} />
+            <span>Pull Requests</span>
+          </button>
+          <button
+            type="button"
             className={view === "services" ? "is-active" : ""}
             onClick={() => selectView("services")}
           >
@@ -397,6 +411,11 @@ export function App() {
           onStartTerminal={startTerminal}
           onStartAiTerminal={startAiTerminal}
           theme={theme}
+        />
+      ) : view === "pull-requests" ? (
+        <PullRequestsView
+          key={workspace.current.path}
+          workspacePath={workspace.current.path}
         />
       ) : view === "services" ? (
         <ServicesView

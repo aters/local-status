@@ -13,6 +13,7 @@ in one folder.
 - Working changes, commits, file trees, and incoming/outgoing status
 - Side-by-side and inline Monaco diffs with rendered Markdown previews
 - Stage, unstage, commit, revert, fetch, and fast-forward-only sync
+- Open pull requests created by you or waiting for your review
 - Optional commit-message drafts from an installed Codex or Claude CLI
 - Interactive terminals and detected package scripts
 - Saved custom service profiles
@@ -21,7 +22,9 @@ Repository data, terminal output, paths, and settings stay on your machine.
 There is no Local Status account, telemetry, or hosted service. If you
 explicitly generate a commit message, the staged diff, file names, statistics,
 and recent commit subjects are processed through the selected CLI account after
-a provider-specific first-use confirmation.
+a provider-specific first-use confirmation. The Pull Requests view fetches
+GitHub metadata through your existing authenticated GitHub CLI account; Local
+Status does not read or store its credentials.
 
 ## Requirements
 
@@ -30,6 +33,7 @@ a provider-specific first-use confirmation.
 - npm
 - Git
 - Xcode Command Line Tools
+- Optional: [GitHub CLI](https://cli.github.com/) for the Pull Requests view
 
 Install the command-line tools if needed:
 
@@ -68,6 +72,19 @@ review it more carefully.
 
 Sync pulls the configured upstream with `--ff-only`, then pushes local commits.
 It stops instead of creating an implicit merge when branches have diverged.
+
+The **Pull Requests** screen shows open PRs created by the active GitHub CLI
+account and PRs currently requesting that account's review. Results are limited
+to non-archived `github.com` repositories in the selected workspace, and drafts
+remain visible with a Draft badge. Selecting a PR opens it on GitHub in your
+default browser.
+
+Install and authenticate GitHub CLI before using the screen:
+
+```bash
+brew install gh
+gh auth login
+```
 
 Use **New terminal** to open a shell in a repository. **Run script** lists
 scripts detected from `package.json`. The Services screen keeps running
@@ -136,6 +153,18 @@ If Claude is not installed, choose **Install Claude CLI** in the commit window.
 Local Status opens a managed terminal, runs Anthropic's native installer, and
 then starts Claude's account sign-in flow. **Locate existing** remains available
 for installations in uncommon locations.
+
+### Pull requests are unavailable
+
+Confirm GitHub CLI is installed and signed in to `github.com`:
+
+```bash
+gh --version
+gh auth status --hostname github.com
+```
+
+The Pull Requests view supports `github.com` only and ignores archived,
+non-GitHub, or inaccessible repositories.
 
 ## License
 

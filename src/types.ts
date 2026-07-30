@@ -69,6 +69,25 @@ export interface RepositoriesResponse {
   repositories: RepositorySummary[];
 }
 
+export interface PullRequestSummary {
+  repository: string;
+  number: number;
+  title: string;
+  author: string;
+  isDraft: boolean;
+  updatedAt: string;
+  url: string;
+}
+
+export interface PullRequestsResponse {
+  generatedAt: string;
+  account: string;
+  repositoryCount: number;
+  skippedRepositories: string[];
+  createdByMe: PullRequestSummary[];
+  reviewRequested: PullRequestSummary[];
+}
+
 export interface ChangeItem {
   id: string;
   path: string;
@@ -359,6 +378,10 @@ export interface LocalStatusBridge {
       stashRef: string,
       mode: "apply" | "pop",
     ): Promise<StashActionResult>;
+  };
+  pullRequests: {
+    list(): Promise<PullRequestsResponse>;
+    open(url: string): Promise<void>;
   };
   preferences: {
     get(): Promise<Preferences>;
