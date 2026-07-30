@@ -18,6 +18,7 @@ export const api = {
   commit: (repositoryId: string, sha: string) =>
     bridge().repositories.commit(repositoryId, sha),
   files: (repositoryId: string) => bridge().repositories.files(repositoryId),
+  workspaceFiles: () => bridge().repositories.workspaceFiles(),
   comparison: (
     repositoryId: string,
     options: Parameters<LocalStatusBridge["repositories"]["comparison"]>[1],

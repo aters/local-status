@@ -32,6 +32,7 @@ import {
   repositoryCommits,
   repositoryFiles,
   repositoryStashes,
+  workspaceFiles,
   prepareCommit,
   revertChanges,
   stageChanges,
@@ -106,7 +107,13 @@ function configureApplicationIdentity() {
 
   if (process.platform === "darwin") {
     Menu.setApplicationMenu(
-      Menu.buildFromTemplate(applicationMenuTemplate()),
+      Menu.buildFromTemplate(
+        applicationMenuTemplate((shortcut) => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send("application:shortcut", shortcut);
+          }
+        }),
+      ),
     );
   }
 }
@@ -444,6 +451,7 @@ function registerIpc() {
   handle("repositories:files", (payload) =>
     repositoryFiles(requireString(requireObject(payload).repositoryId, "repository")),
   );
+  handle("repositories:workspace-files", () => workspaceFiles());
   handle("repositories:comparison", (payload) => {
     const request = requireObject(payload);
     return comparisonContents(

@@ -28,10 +28,13 @@ const COMMIT_TIMEOUT_MS = 120_000;
 const MAX_GIT_OUTPUT = 12 * 1024 * 1024;
 const MAX_COMMIT_DIFF_BYTES = 1_000_000;
 const PATH_CHUNK_SIZE = 200;
+const MAX_WORKSPACE_FILES = 100_000;
+const WORKSPACE_FILE_CACHE_MS = 10_000;
 export const MAX_PREVIEW_BYTES = 1_000_000;
 
 const fetchTimes = new Map();
 let repositoryCache = { at: 0, root: "", repositories: new Map() };
+let workspaceFileCache = { at: 0, root: "", response: null };
 let activeWorkspaceRoot = null;
 
 export class GitServiceError extends Error {
@@ -172,6 +175,7 @@ function workspaceRoot() {
 export function setWorkspaceRoot(root) {
   activeWorkspaceRoot = root ? resolve(root) : null;
   repositoryCache = { at: 0, root: "", repositories: new Map() };
+  workspaceFileCache = { at: 0, root: "", response: null };
   fetchTimes.clear();
 }
 
@@ -1120,8 +1124,7 @@ export async function commitDetails(repositoryId, sha) {
   };
 }
 
-export async function repositoryFiles(repositoryId) {
-  const repository = await getRepository(repositoryId);
+async function filesForRepository(repository, limit = Number.POSITIVE_INFINITY) {
   const output = await execGit(repository.path, [
     "ls-files",
     "-co",
@@ -1131,7 +1134,75 @@ export async function repositoryFiles(repositoryId) {
   const files = [...new Set(output.split("\0").filter(Boolean))].sort((left, right) =>
     left.localeCompare(right),
   );
+  return files.slice(0, limit);
+}
+
+export async function repositoryFiles(repositoryId) {
+  const repository = await getRepository(repositoryId);
+  const files = await filesForRepository(repository);
   return { repositoryId, files };
+}
+
+export async function workspaceFiles() {
+  const root = workspaceRoot();
+  if (
+    workspaceFileCache.response &&
+    workspaceFileCache.root === root &&
+    Date.now() - workspaceFileCache.at < WORKSPACE_FILE_CACHE_MS
+  ) {
+    return workspaceFileCache.response;
+  }
+
+  const repositories = await discoverRepositories();
+  const results = await Promise.all(
+    [...repositories.values()].map(async (repository) => {
+      try {
+        const files = await filesForRepository(
+          repository,
+          MAX_WORKSPACE_FILES + 1,
+        );
+        return {
+          repositoryId: repository.id,
+          files: files.slice(0, MAX_WORKSPACE_FILES),
+          truncated: files.length > MAX_WORKSPACE_FILES,
+          error: null,
+        };
+      } catch (error) {
+        return {
+          repositoryId: repository.id,
+          files: [],
+          truncated: false,
+          error:
+            error instanceof Error ? error.message : "Could not index this repository.",
+        };
+      }
+    }),
+  );
+  const files = results
+    .flatMap((result) =>
+      result.files.map((path) => ({ repositoryId: result.repositoryId, path })),
+    )
+    .sort(
+      (left, right) =>
+        left.repositoryId.localeCompare(right.repositoryId) ||
+        left.path.localeCompare(right.path),
+    );
+  const truncated =
+    files.length > MAX_WORKSPACE_FILES ||
+    results.some((result) => result.truncated);
+  const response = {
+    generatedAt: new Date().toISOString(),
+    files: files.slice(0, MAX_WORKSPACE_FILES),
+    errors: results
+      .filter((result) => result.error)
+      .map((result) => ({
+        repositoryId: result.repositoryId,
+        error: result.error,
+      })),
+    truncated,
+  };
+  workspaceFileCache = { at: Date.now(), root, response };
+  return response;
 }
 
 function safeRepoPath(repositoryPath, filePath) {

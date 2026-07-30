@@ -13,12 +13,26 @@ import { App } from "./App";
 import type { LocalStatusBridge } from "./types";
 
 vi.mock("./components/MonacoDiff", () => ({
-  default: () => <div data-testid="diff-viewer">Side-by-side diff</div>,
+  default: ({ findRequest }: { findRequest?: number }) => (
+    <div data-find-request={findRequest} data-testid="diff-viewer">
+      Side-by-side diff
+    </div>
+  ),
 }));
 
 vi.mock("./components/TerminalPane", () => ({
-  TerminalPane: ({ autoFocus }: { autoFocus?: boolean }) => (
-    <div data-autofocus={String(Boolean(autoFocus))} data-testid="terminal-pane">
+  TerminalPane: ({
+    autoFocus,
+    findRequest,
+  }: {
+    autoFocus?: boolean;
+    findRequest?: number;
+  }) => (
+    <div
+      data-autofocus={String(Boolean(autoFocus))}
+      data-find-request={findRequest}
+      data-testid="terminal-pane"
+    >
       Terminal
     </div>
   ),
@@ -104,6 +118,7 @@ const aiProviders = {
 
 function createBridge(current = true) {
   const terminalCallbacks = new Set<(event: never) => void>();
+  const shortcutCallbacks = new Set<(shortcut: "quick-open" | "find") => void>();
   return {
     workspace: {
       getCurrent: vi.fn(async () => ({
@@ -146,7 +161,38 @@ function createBridge(current = true) {
       })),
       commit: vi.fn(),
       files: vi.fn(async () => ({ repositoryId: "changed-web", files: [] })),
-      comparison: vi.fn(),
+      workspaceFiles: vi.fn(async () => ({
+        generatedAt: new Date().toISOString(),
+        files: [
+          { repositoryId: "changed-web", path: "src/App.tsx" },
+          { repositoryId: "changed-web", path: "README.md" },
+          { repositoryId: "clean-api", path: "package.json" },
+        ],
+        errors: [],
+        truncated: false,
+      })),
+      comparison: vi.fn(async (repositoryId, options) => ({
+        repositoryId,
+        path: options.path,
+        previousPath: null,
+        language: "typescript",
+        original: {
+          content: "",
+          source: "index",
+          label: "Index",
+          binary: false,
+          truncated: false,
+          missing: false,
+        },
+        modified: {
+          content: "export const ready = true;",
+          source: "working",
+          label: "Working tree",
+          binary: false,
+          truncated: false,
+          missing: false,
+        },
+      })),
       fetch: vi.fn(),
       fetchAll: vi.fn(),
       prepareCommit: vi.fn(async (repositoryId) => ({
@@ -225,6 +271,10 @@ function createBridge(current = true) {
           },
         ],
       })),
+    },
+    shortcuts: {
+      onRequest: vi.fn((callback) => shortcutCallbacks.add(callback)),
+      offRequest: vi.fn((callback) => shortcutCallbacks.delete(callback)),
     },
     ai: {
       status: vi.fn(async () => ({
@@ -334,7 +384,8 @@ describe("Local Status", () => {
     expect(await screen.findByText("changed-web")).toBeInTheDocument();
     expect(window.localStatus.repositories.list).toHaveBeenCalledOnce();
 
-    await user.click(screen.getByRole("button", { name: /engineering change/i }));
+    await user.click(screen.getByRole("button", { name: "engineering" }));
+    await user.click(screen.getByRole("menuitem", { name: "Add workspace…" }));
 
     await waitFor(() =>
       expect(window.localStatus.workspace.choose).toHaveBeenCalledOnce(),
@@ -347,7 +398,70 @@ describe("Local Status", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows repository health, filters changes, and focuses global search", async () => {
+  it("switches recent workspaces and opens the native picker from the header menu", async () => {
+    const user = userEvent.setup();
+    const bridge = createBridge();
+    bridge.workspace.getCurrent = vi.fn(async () => ({
+      current: { path: "/tmp/engineering", name: "engineering" },
+      recent: [
+        { path: "/tmp/engineering", name: "engineering" },
+        { path: "/tmp/client-apps", name: "client-apps" },
+      ],
+    }));
+    bridge.workspace.openRecent = vi.fn(async () => ({
+      current: { path: "/tmp/client-apps", name: "client-apps" },
+      recent: [
+        { path: "/tmp/client-apps", name: "client-apps" },
+        { path: "/tmp/engineering", name: "engineering" },
+      ],
+    }));
+    window.localStatus = bridge;
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "engineering" }));
+    await user.click(screen.getByRole("menuitem", { name: /client-apps/i }));
+
+    expect(bridge.workspace.openRecent).toHaveBeenCalledWith("/tmp/client-apps");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "client-apps" })).toBeVisible(),
+    );
+
+    await user.click(screen.getByRole("button", { name: "client-apps" }));
+    await user.click(screen.getByRole("menuitem", { name: "Add workspace…" }));
+
+    expect(bridge.workspace.choose).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the workspace menu open when a recent workspace is unavailable", async () => {
+    const user = userEvent.setup();
+    const bridge = createBridge();
+    bridge.workspace.getCurrent = vi.fn(async () => ({
+      current: { path: "/tmp/engineering", name: "engineering" },
+      recent: [
+        { path: "/tmp/engineering", name: "engineering" },
+        { path: "/tmp/missing", name: "missing" },
+      ],
+    }));
+    bridge.workspace.openRecent = vi.fn(async () => {
+      throw new Error("That workspace is no longer available.");
+    });
+    window.localStatus = bridge;
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "engineering" }));
+    await user.click(screen.getByRole("menuitem", { name: /missing/i }));
+
+    expect(screen.getByRole("menu", { name: "Switch workspace" })).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "That workspace is no longer available.",
+    );
+    expect(screen.getByRole("button", { name: "engineering" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+
+  it("shows repository health, filters changes, and opens Quick Open", async () => {
     const user = userEvent.setup();
     render(<App />);
 
@@ -369,7 +483,39 @@ describe("Local Status", () => {
     expect(within(repositoryPanel).getByText("changed-web")).toBeVisible();
 
     fireEvent.keyDown(window, { key: "p", metaKey: true });
-    expect(screen.getByRole("textbox", { name: "Find a repository" })).toHaveFocus();
+    const palette = await screen.findByRole("dialog", { name: "Quick Open" });
+    expect(
+      within(palette).getByRole("searchbox", { name: "Search files" }),
+    ).toHaveFocus();
+    expect(screen.getByRole("textbox", { name: "Find a repository" })).not.toHaveFocus();
+  });
+
+  it("opens a workspace file from Quick Open and focuses contextual filters", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText("changed-web");
+    fireEvent.keyDown(window, { key: "f", metaKey: true });
+    expect(
+      await screen.findByRole("textbox", { name: "Filter changed files" }),
+    ).toHaveFocus();
+
+    fireEvent.keyDown(window, { key: "p", metaKey: true });
+    const search = await screen.findByRole("searchbox", { name: "Search files" });
+    await user.type(search, "App");
+    await user.click(
+      await screen.findByRole("option", { name: /App\.tsx.*changed-web/i }),
+    );
+
+    await waitFor(() => {
+      expect(window.location.hash).toContain("repo=changed-web");
+      expect(window.location.hash).toContain("tab=files");
+      expect(window.location.hash).toContain("file=src%2FApp.tsx");
+    });
+    expect(window.localStatus.repositories.comparison).toHaveBeenCalledWith(
+      "changed-web",
+      { path: "src/App.tsx", scope: "working" },
+    );
   });
 
   it("persists panel widths and starts a repository terminal", async () => {
@@ -684,6 +830,11 @@ describe("Local Status", () => {
       name: "Close setup terminal",
     });
     setupClose.focus();
+    fireEvent.keyDown(window, { key: "f", metaKey: true });
+    expect(screen.getByTestId("terminal-pane")).toHaveAttribute(
+      "data-find-request",
+      "1",
+    );
     fireEvent.keyDown(window, { key: "p", metaKey: true });
     expect(setupClose).toHaveFocus();
     expect(

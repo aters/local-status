@@ -92,11 +92,20 @@ const terminalThemes: Record<Theme, NonNullable<ConstructorParameters<typeof Ter
 
 export const TerminalPane = forwardRef<
   TerminalPaneHandle,
-  { session: TerminalSession; autoFocus?: boolean; theme: Theme }
->(function TerminalPane({ session, autoFocus = false, theme }, ref) {
+  {
+    session: TerminalSession;
+    autoFocus?: boolean;
+    theme?: Theme;
+    findRequest?: number;
+  }
+>(function TerminalPane(
+  { session, autoFocus = false, theme = "green", findRequest = 0 },
+  ref,
+) {
   const hostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -166,6 +175,15 @@ export const TerminalPane = forwardRef<
     };
   }, [autoFocus, session.id, session.buffer, session.truncated, theme]);
 
+  useEffect(() => {
+    if (!findRequest) return;
+    setSearchOpen(true);
+  }, [findRequest]);
+
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus();
+  }, [searchOpen]);
+
   function closeSearch() {
     setSearchOpen(false);
     window.requestAnimationFrame(focusTerminal);
@@ -178,6 +196,7 @@ export const TerminalPane = forwardRef<
           <>
             <Search size={14} />
             <input
+              ref={searchInputRef}
               autoFocus
               value={query}
               onChange={(event) => {
@@ -190,7 +209,8 @@ export const TerminalPane = forwardRef<
               }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && query) {
-                  searchAddonRef.current?.findNext(query);
+                  if (event.shiftKey) searchAddonRef.current?.findPrevious(query);
+                  else searchAddonRef.current?.findNext(query);
                 }
                 if (event.key === "Escape") closeSearch();
               }}

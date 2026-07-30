@@ -88,6 +88,20 @@ export interface PullRequestsResponse {
   reviewRequested: PullRequestSummary[];
 }
 
+export interface WorkspaceFile {
+  repositoryId: string;
+  path: string;
+}
+
+export interface WorkspaceFilesResponse {
+  generatedAt: string;
+  files: WorkspaceFile[];
+  errors: Array<{ repositoryId: string; error: string }>;
+  truncated: boolean;
+}
+
+export type AppShortcut = "quick-open" | "find";
+
 export interface ChangeItem {
   id: string;
   path: string;
@@ -306,6 +320,7 @@ export interface LocalStatusBridge {
       sha: string,
     ): Promise<{ repositoryId: string; commit: Commit; files: FileChange[] }>;
     files(repositoryId: string): Promise<{ repositoryId: string; files: string[] }>;
+    workspaceFiles(): Promise<WorkspaceFilesResponse>;
     comparison(
       repositoryId: string,
       options: {
@@ -386,6 +401,10 @@ export interface LocalStatusBridge {
   preferences: {
     get(): Promise<Preferences>;
     setTheme(theme: Theme): Promise<Preferences>;
+  };
+  shortcuts: {
+    onRequest(callback: (shortcut: AppShortcut) => void): void;
+    offRequest(callback: (shortcut: AppShortcut) => void): void;
   };
   ai: {
     status(): Promise<AiStatus>;
