@@ -512,7 +512,7 @@ test("renders and persists the Glass and Neumorphic theme systems", async ({
       ".change-group__header",
       ".change-action",
     ];
-    return selectors.map((selector) => {
+    const surfaces = selectors.map((selector) => {
       const style = getComputedStyle(
         document.querySelector<HTMLElement>(selector)!,
       );
@@ -524,15 +524,33 @@ test("renders and persists the Glass and Neumorphic theme systems", async ({
         shadow: style.boxShadow,
       };
     });
+    const activeIndicator = getComputedStyle(
+      document.querySelector<HTMLElement>(".context-tabs button.is-active")!,
+      "::after",
+    );
+    return {
+      activeIndicator: {
+        background: activeIndicator.backgroundColor,
+        height: Number.parseFloat(activeIndicator.height),
+      },
+      surfaces,
+    };
   });
-  for (const surface of glassContextMaterials) {
+  for (const surface of glassContextMaterials.surfaces) {
     expect(surface.radius, surface.selector).toBeGreaterThan(0);
     expect(surface.border, surface.selector).toBeGreaterThan(0);
-    expect(surface.background, surface.selector).not.toBe("rgba(0, 0, 0, 0)");
+    if (surface.selector !== ".context-tabs button.is-active") {
+      expect(surface.background, surface.selector).not.toBe("rgba(0, 0, 0, 0)");
+    }
   }
+  expect(glassContextMaterials.activeIndicator.height).toBeGreaterThanOrEqual(2);
+  expect(glassContextMaterials.activeIndicator.background).not.toBe(
+    "rgba(0, 0, 0, 0)",
+  );
   expect(
-    glassContextMaterials.find(({ selector }) => selector === ".context-tabs")
-      ?.shadow,
+    glassContextMaterials.surfaces.find(
+      ({ selector }) => selector === ".context-tabs",
+    )?.shadow,
   ).toContain("inset");
   await window.screenshot({
     path: testInfo.outputPath("glass-workspace.png"),
@@ -633,23 +651,25 @@ test("renders and persists the Glass and Neumorphic theme systems", async ({
   const neumorphicContextMaterials = await window.evaluate(() => {
     const style = (selector: string) =>
       getComputedStyle(document.querySelector<HTMLElement>(selector)!);
+    const activeIndicator = getComputedStyle(
+      document.querySelector<HTMLElement>(".context-tabs button.is-active")!,
+      "::after",
+    );
     return {
       headerShadow: style(".repository-header").boxShadow,
       tabsShadow: style(".context-tabs").boxShadow,
-      activeTabShadow: style(".context-tabs button.is-active").boxShadow,
       contentShadow: style(".context-content").boxShadow,
       groupShadow: style(".change-group__header").boxShadow,
       actionShadow: style(".change-action").boxShadow,
-      activeTabBorder: style(".context-tabs button.is-active").borderTopColor,
+      activeIndicatorBackground: activeIndicator.backgroundColor,
     };
   });
   expect(neumorphicContextMaterials.headerShadow).not.toBe("none");
   expect(neumorphicContextMaterials.tabsShadow).toContain("inset");
-  expect(neumorphicContextMaterials.activeTabShadow).toContain("inset");
   expect(neumorphicContextMaterials.contentShadow).toContain("inset");
   expect(neumorphicContextMaterials.groupShadow).not.toBe("none");
   expect(neumorphicContextMaterials.actionShadow).not.toBe("none");
-  expect(neumorphicContextMaterials.activeTabBorder).not.toBe(
+  expect(neumorphicContextMaterials.activeIndicatorBackground).not.toBe(
     "rgba(0, 0, 0, 0)",
   );
   await window.screenshot({

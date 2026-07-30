@@ -326,20 +326,12 @@ export function ServicesView({
       )}
 
       <section className="service-layout">
-        <aside className="session-panel">
+        <aside className={`session-panel${sessions.length ? "" : " is-empty"}`}>
           <div className="session-panel__header">
             <div>
               <span className="panel-kicker">Managed by Local Status</span>
               <strong>Sessions</strong>
             </div>
-            <button
-              className="icon-button"
-              type="button"
-              title="Refresh listeners"
-              onClick={() => void refreshListeners()}
-            >
-              <RefreshCw size={14} />
-            </button>
           </div>
           <div className="session-list">
             {grouped.map(([repositoryId, entries]) => (
@@ -364,7 +356,7 @@ export function ServicesView({
               </div>
             ))}
             {!sessions.length && (
-              <div className="service-empty">
+              <div className="service-empty service-empty--sessions">
                 <SquareTerminal size={23} />
                 <strong>No terminal sessions</strong>
                 <span>Start a shell or package script above.</span>
@@ -505,12 +497,21 @@ export function ServicesView({
               <strong>System listeners</strong>
               <span>Read-only macOS snapshot</span>
             </div>
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="Refresh system listeners"
+              title="Refresh system listeners"
+              onClick={() => void refreshListeners()}
+            >
+              <RefreshCw size={14} />
+            </button>
           </header>
           <div>
             {listeners.map((listener) => (
               <div
                 className="system-listener"
-                key={`${listener.pid}:${listener.address}`}
+                key={`${listener.process}:${listener.pid}:${listener.port}`}
               >
                 <span>
                   <strong>{listener.process}</strong>

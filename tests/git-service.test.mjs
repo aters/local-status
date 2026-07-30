@@ -40,6 +40,7 @@ import {
   syncRepository,
   unstageChanges,
   popStash,
+  __testing,
 } from "../server/git-service.mjs";
 
 const temporaryDirectories = [];
@@ -61,6 +62,46 @@ function configureUser(repository) {
   git(repository, "config", "user.email", "workspace-test@local-status.test");
   git(repository, "config", "user.name", "Local Status Test");
 }
+
+describe("listener presentation", () => {
+  it("deduplicates IPv4 and IPv6 rows that render as the same listener", () => {
+    expect(
+      __testing.deduplicateListeners([
+        {
+          process: "postgres",
+          pid: 442,
+          port: 5432,
+          address: "127.0.0.1:5432",
+        },
+        {
+          process: "postgres",
+          pid: 442,
+          port: 5432,
+          address: "[::1]:5432",
+        },
+        {
+          process: "node",
+          pid: 901,
+          port: 5432,
+          address: "127.0.0.1:5432",
+        },
+      ]),
+    ).toEqual([
+      {
+        process: "postgres",
+        pid: 442,
+        port: 5432,
+        address: "127.0.0.1:5432",
+      },
+      {
+        process: "node",
+        pid: 901,
+        port: 5432,
+        address: "127.0.0.1:5432",
+      },
+    ]);
+  });
+});
 
 afterEach(async () => {
   setWorkspaceRoot(null);
@@ -863,20 +904,27 @@ describe("local Git integration", () => {
     ).rejects.toBeInstanceOf(GitServiceError);
   });
 
-  it("uses the workspace root as the repository when it is a Git root", async () => {
-    const repository = temporaryDirectory("local-status-root-repository-");
-    execFileSync("git", ["init", "-b", "main", repository], { stdio: "ignore" });
-    configureUser(repository);
-    writeFileSync(join(repository, "tracked.txt"), "workspace root\n");
-    git(repository, "add", "tracked.txt");
-    git(repository, "commit", "-m", "Workspace root");
+  it("excludes the workspace root even when it is a Git repository", async () => {
+    const workspace = temporaryDirectory("local-status-git-workspace-");
+    execFileSync("git", ["init", "-b", "main", workspace], { stdio: "ignore" });
+    configureUser(workspace);
+    writeFileSync(join(workspace, "workspace.txt"), "workspace root\n");
+    git(workspace, "add", "workspace.txt");
+    git(workspace, "commit", "-m", "Workspace root");
 
-    setWorkspaceRoot(repository);
+    const child = join(workspace, "child-repository");
+    execFileSync("git", ["init", "-b", "main", child], { stdio: "ignore" });
+    configureUser(child);
+    writeFileSync(join(child, "tracked.txt"), "child repository\n");
+    git(child, "add", "tracked.txt");
+    git(child, "commit", "-m", "Child repository");
+
+    setWorkspaceRoot(workspace);
     const result = await listRepositorySummaries();
 
     expect(result.repositories).toHaveLength(1);
     expect(result.repositories[0]).toMatchObject({
-      id: repository.split("/").pop(),
+      id: "child-repository",
       branch: "main",
     });
   });

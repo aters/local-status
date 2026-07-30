@@ -14,7 +14,6 @@ import {
   File,
   FileCode2,
   FileQuestion,
-  Files,
   GitCommitHorizontal,
   GitBranch,
   GitCompareArrows,
@@ -3017,21 +3016,25 @@ export function RepositoryWorkspace({
               <div className="context-tabs" role="tablist">
                 {(
                   [
-                    ["changes", GitCompareArrows, selectedRepository.summary.files],
-                    ["commits", GitCommitHorizontal, null],
-                    ["stashes", Archive, stashes.length || null],
-                    ["files", Files, null],
+                    ["changes", selectedRepository.summary.files],
+                    ["commits", null],
+                    ["stashes", stashes.length || null],
+                    ["files", null],
                   ] as const
-                ).map(([value, Icon, count]) => (
+                ).map(([value, count]) => (
                   <button
                     type="button"
                     role="tab"
                     aria-selected={tab === value}
-                    className={tab === value ? "is-active" : ""}
+                    className={[
+                      tab === value ? "is-active" : "",
+                      count !== null ? "has-count" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
                     key={value}
                     onClick={() => selectTab(value)}
                   >
-                    <Icon size={14} />
                     {value[0].toUpperCase() + value.slice(1)}
                     {count !== null && <span>{count}</span>}
                   </button>

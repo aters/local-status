@@ -339,6 +339,17 @@
   }
 
   :root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"])
+    .service-layout:has(.session-panel.is-empty) {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  :root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"])
+    .session-panel.is-empty
+    .session-list {
+    display: none;
+  }
+
+  :root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"])
     .services-toolbar {
     padding: 11px 12px;
   }

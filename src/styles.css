@@ -908,7 +908,8 @@ body.is-resizing {
   flex: 1;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 6px;
+  padding: 0 8px;
   border: 0;
   color: #688078;
   background: transparent;
@@ -938,14 +939,21 @@ body.is-resizing {
 }
 
 .context-tabs button > span {
-  display: grid;
-  min-width: 16px;
+  display: inline-flex;
+  min-width: 15px;
   height: 15px;
-  place-items: center;
-  border-radius: 5px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 999px;
   color: #8ea59a;
-  background: #18251f;
-  font-size: var(--font-caption);
+  background: color-mix(in srgb, currentColor 9%, transparent);
+  font-size: 10px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 
 .commit-toolbar {
@@ -4742,6 +4750,11 @@ button.workspace-menu__item:focus-visible {
 
 .listener-sidebar > header {
   justify-content: flex-start;
+}
+
+.listener-sidebar > header > button {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .listener-sidebar > header svg {

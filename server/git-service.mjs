@@ -284,36 +284,26 @@ export async function discoverRepositories({ refresh = false } = {}) {
       : new Map();
 
   const canonicalRoot = await realpath(root);
-  let candidates;
-  if (await isDirectGitRoot(canonicalRoot)) {
-    candidates = [
-      {
-        id: basename(canonicalRoot),
-        path: canonicalRoot,
-      },
-    ];
-  } else {
-    const entries = await readdir(canonicalRoot, { withFileTypes: true });
-    candidates = (
-      await Promise.all(
-        entries
-          .filter((entry) => !entry.name.startsWith("."))
-          .map(async (entry) => {
-            const childPath = join(canonicalRoot, entry.name);
-            if (!entry.isDirectory() && !entry.isSymbolicLink()) return null;
-            try {
-              if (!(await stat(childPath)).isDirectory()) return null;
-              return {
-                id: entry.name,
-                path: await realpath(childPath),
-              };
-            } catch {
-              return null;
-            }
-          }),
-      )
-    ).filter(Boolean);
-  }
+  const entries = await readdir(canonicalRoot, { withFileTypes: true });
+  const candidates = (
+    await Promise.all(
+      entries
+        .filter((entry) => !entry.name.startsWith("."))
+        .map(async (entry) => {
+          const childPath = join(canonicalRoot, entry.name);
+          if (!entry.isDirectory() && !entry.isSymbolicLink()) return null;
+          try {
+            if (!(await stat(childPath)).isDirectory()) return null;
+            return {
+              id: entry.name,
+              path: await realpath(childPath),
+            };
+          } catch {
+            return null;
+          }
+        }),
+    )
+  ).filter(Boolean);
   const checks = await Promise.all(
     candidates.map(async (candidate) => {
       const cached = cachedRepositories.get(candidate.id);
@@ -1881,12 +1871,9 @@ export async function localListeners() {
         address,
       });
     }
-    const unique = new Map(
-      listeners.map((listener) => [`${listener.process}:${listener.address}`, listener]),
-    );
     return {
       generatedAt: new Date().toISOString(),
-      listeners: [...unique.values()].sort(
+      listeners: deduplicateListeners(listeners).sort(
         (left, right) =>
           left.port - right.port || left.process.localeCompare(right.process),
       ),
@@ -1900,4 +1887,17 @@ export async function localListeners() {
   }
 }
 
-export const __testing = { safeRepoPath, summarizeChanges };
+function deduplicateListeners(listeners) {
+  const unique = new Map();
+  for (const listener of listeners) {
+    const key = `${listener.process}:${listener.pid ?? "unknown"}:${listener.port}`;
+    if (!unique.has(key)) unique.set(key, listener);
+  }
+  return [...unique.values()];
+}
+
+export const __testing = {
+  deduplicateListeners,
+  safeRepoPath,
+  summarizeChanges,
+};

@@ -1318,6 +1318,11 @@
   filter: saturate(65%);
 }
 
+:root[data-material="liquid-glass"] .branch-picker__list button:disabled {
+  opacity: 1;
+  filter: none;
+}
+
 /*
  * Liquid Glass segmented controls are one optical group. Their child buttons
  * use tint only, which avoids glass-on-glass and keeps selection geometry calm.
@@ -1352,8 +1357,11 @@
 :root[data-material="liquid-glass"] .filter-strip button {
   min-width: 0;
   flex: 1 1 0;
-  padding-right: 2px;
-  padding-left: 2px;
+  padding-right: 3px;
+  padding-left: 3px;
+  font-size: 11px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
 :root[data-material="liquid-glass"] .context-tabs button,
@@ -1592,4 +1600,64 @@
   color: var(--text);
   background: var(--liquid-content);
   backdrop-filter: none;
+}
+
+/*
+ * Repository tabs stay visually quiet inside their shared container. A small
+ * underline carries selection so hover and active states do not become large,
+ * competing pills.
+ */
+
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
+  .context-tabs
+  button,
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
+  .context-tabs
+  button:hover,
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
+  .context-tabs
+  button.is-active {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
+  .context-tabs
+  button:hover {
+  color: var(--text);
+}
+
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
+  .context-tabs
+  button.is-active {
+  color: var(--green);
+}
+
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
+  .context-tabs
+  button::after {
+  right: 22%;
+  bottom: -1px;
+  left: 22%;
+  display: block;
+  height: 2px;
+  background: transparent;
+}
+
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
+  .context-tabs
+  button.is-active::after {
+  background: var(--green);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--green) 32%, transparent);
+}
+
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
+  .context-tabs
+  button
+  > span {
+  border: 0;
+  color: currentColor;
+  background: color-mix(in srgb, currentColor 9%, transparent);
+  box-shadow: none;
 }
