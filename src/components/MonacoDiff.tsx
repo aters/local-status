@@ -13,7 +13,7 @@ import type { editor } from "monaco-editor";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import "../monaco";
-import type { Comparison } from "../types";
+import type { Comparison, Theme } from "../types";
 
 type DiffEditorInstance = editor.IStandaloneDiffEditor;
 
@@ -40,7 +40,13 @@ function loadBoolean(key: string, fallback: boolean) {
   return value === null ? fallback : value === "true";
 }
 
-export default function MonacoDiff({ comparison }: { comparison: Comparison }) {
+export default function MonacoDiff({
+  comparison,
+  theme = "green",
+}: {
+  comparison: Comparison;
+  theme?: Theme;
+}) {
   const editorRef = useRef<DiffEditorInstance | null>(null);
   const diffUpdateSubscriptionRef = useRef<{ dispose(): void } | null>(null);
   const autoRevealFrameRef = useRef<number | null>(null);
@@ -297,9 +303,9 @@ export default function MonacoDiff({ comparison }: { comparison: Comparison }) {
           modifiedModelPath={`inmemory://local-status/${encodeURIComponent(comparison.repositoryId)}/${encodeURIComponent(comparison.modified.source)}/${encodeURIComponent(comparison.path)}`}
           original={comparison.original.content}
           modified={comparison.modified.content}
-          theme="local-status"
+          theme={`local-status-${theme}`}
           beforeMount={(monacoInstance) => {
-            monacoInstance.editor.defineTheme("local-status", {
+            monacoInstance.editor.defineTheme("local-status-green", {
               base: "vs-dark",
               inherit: true,
               rules: [],
@@ -317,6 +323,46 @@ export default function MonacoDiff({ comparison }: { comparison: Comparison }) {
                 "editorOverviewRuler.deletedForeground": "#f2777f",
                 "scrollbarSlider.background": "#66807433",
                 "scrollbarSlider.hoverBackground": "#78998a66",
+              },
+            });
+            monacoInstance.editor.defineTheme("local-status-dark", {
+              base: "vs-dark",
+              inherit: true,
+              rules: [],
+              colors: {
+                "editor.background": "#171717",
+                "editorGutter.background": "#171717",
+                "editorLineNumber.foreground": "#737373",
+                "editorLineNumber.activeForeground": "#d4d4d4",
+                "diffEditor.insertedTextBackground": "#2f7d4d55",
+                "diffEditor.removedTextBackground": "#a94c5555",
+                "diffEditor.insertedLineBackground": "#173d2788",
+                "diffEditor.removedLineBackground": "#43232988",
+                "diffEditor.diagonalFill": "#262626",
+                "editorOverviewRuler.addedForeground": "#57c785",
+                "editorOverviewRuler.deletedForeground": "#ef7a82",
+                "scrollbarSlider.background": "#77777733",
+                "scrollbarSlider.hoverBackground": "#99999966",
+              },
+            });
+            monacoInstance.editor.defineTheme("local-status-light", {
+              base: "vs",
+              inherit: true,
+              rules: [],
+              colors: {
+                "editor.background": "#ffffff",
+                "editorGutter.background": "#ffffff",
+                "editorLineNumber.foreground": "#8b8b8b",
+                "editorLineNumber.activeForeground": "#333333",
+                "diffEditor.insertedTextBackground": "#60b8784a",
+                "diffEditor.removedTextBackground": "#e06c754a",
+                "diffEditor.insertedLineBackground": "#dff4e688",
+                "diffEditor.removedLineBackground": "#f9dfe288",
+                "diffEditor.diagonalFill": "#eeeeee",
+                "editorOverviewRuler.addedForeground": "#258a52",
+                "editorOverviewRuler.deletedForeground": "#c44550",
+                "scrollbarSlider.background": "#77777733",
+                "scrollbarSlider.hoverBackground": "#66666655",
               },
             });
           }}
@@ -342,7 +388,7 @@ export default function MonacoDiff({ comparison }: { comparison: Comparison }) {
             minimap: { enabled: false },
             fontFamily:
               '"DM Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace',
-            fontSize: 12.5,
+            fontSize: 14,
             lineHeight: 20,
             lineNumbersMinChars: 3,
             scrollBeyondLastLine: false,

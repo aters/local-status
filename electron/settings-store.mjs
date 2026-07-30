@@ -1,8 +1,9 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 
-const SETTINGS_VERSION = 3;
+const SETTINGS_VERSION = 5;
 const MAX_RECENT_WORKSPACES = 8;
+const THEMES = new Set(["green", "dark", "light"]);
 
 function defaults() {
   return {
@@ -10,6 +11,9 @@ function defaults() {
     lastWorkspacePath: null,
     recentWorkspaces: [],
     profiles: {},
+    theme: "green",
+    favouriteRepositoryGroups: {},
+    archivedRepositoryGroups: {},
     ai: {
       provider: "codex",
       models: {
@@ -49,7 +53,7 @@ function parseSettings(value) {
   if (
     !value ||
     typeof value !== "object" ||
-    ![1, 2, SETTINGS_VERSION].includes(value.version)
+    ![1, 2, 3, 4, SETTINGS_VERSION].includes(value.version)
   ) {
     return defaults();
   }
@@ -67,6 +71,25 @@ function parseSettings(value) {
       ? value.recentWorkspaces.slice(0, MAX_RECENT_WORKSPACES)
       : [],
     profiles,
+    theme: THEMES.has(value.theme) ? value.theme : "green",
+    favouriteRepositoryGroups:
+      value.favouriteRepositoryGroups &&
+      typeof value.favouriteRepositoryGroups === "object"
+        ? Object.fromEntries(
+            Object.entries(value.favouriteRepositoryGroups)
+              .filter(([, entries]) => isStringArray(entries))
+              .map(([workspace, entries]) => [workspace, [...new Set(entries)]]),
+          )
+        : {},
+    archivedRepositoryGroups:
+      value.archivedRepositoryGroups &&
+      typeof value.archivedRepositoryGroups === "object"
+        ? Object.fromEntries(
+            Object.entries(value.archivedRepositoryGroups)
+              .filter(([, entries]) => isStringArray(entries))
+              .map(([workspace, entries]) => [workspace, [...new Set(entries)]]),
+          )
+        : {},
     ai: {
       provider: value.ai?.provider === "claude" ? "claude" : "codex",
       models: {
@@ -163,6 +186,43 @@ export class SettingsStore {
       .filter((entry) => entry.id !== profileId);
     await this.save();
     return this.profilesFor(workspacePath);
+  }
+
+  preferences() {
+    return { theme: this.data.theme };
+  }
+
+  async setTheme(theme) {
+    if (!THEMES.has(theme)) throw new Error("Invalid theme.");
+    this.data.theme = theme;
+    await this.save();
+    return this.preferences();
+  }
+
+  favouriteGroupsFor(workspacePath) {
+    return [...(this.data.favouriteRepositoryGroups[workspacePath] ?? [])];
+  }
+
+  async setFavouriteGroup(workspacePath, groupId, favourite) {
+    const groups = new Set(this.favouriteGroupsFor(workspacePath));
+    if (favourite) groups.add(groupId);
+    else groups.delete(groupId);
+    this.data.favouriteRepositoryGroups[workspacePath] = [...groups];
+    await this.save();
+    return this.favouriteGroupsFor(workspacePath);
+  }
+
+  archivedGroupsFor(workspacePath) {
+    return [...(this.data.archivedRepositoryGroups[workspacePath] ?? [])];
+  }
+
+  async setArchivedGroup(workspacePath, groupId, archived) {
+    const groups = new Set(this.archivedGroupsFor(workspacePath));
+    if (archived) groups.add(groupId);
+    else groups.delete(groupId);
+    this.data.archivedRepositoryGroups[workspacePath] = [...groups];
+    await this.save();
+    return this.archivedGroupsFor(workspacePath);
   }
 
   aiSettings() {

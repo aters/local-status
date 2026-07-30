@@ -326,6 +326,23 @@ describe("Local Status", () => {
     expect(window.localStatus.workspace.choose).toHaveBeenCalledOnce();
   });
 
+  it("preserves fetched repositories when workspace selection is cancelled", async () => {
+    const user = userEvent.setup();
+    vi.mocked(window.localStatus.workspace.choose).mockResolvedValueOnce(null);
+    render(<App />);
+
+    expect(await screen.findByText("changed-web")).toBeInTheDocument();
+    expect(window.localStatus.repositories.list).toHaveBeenCalledOnce();
+
+    await user.click(screen.getByRole("button", { name: /engineering change/i }));
+
+    await waitFor(() =>
+      expect(window.localStatus.workspace.choose).toHaveBeenCalledOnce(),
+    );
+    expect(window.localStatus.repositories.list).toHaveBeenCalledOnce();
+    expect(screen.getByText("changed-web")).toBeInTheDocument();
+  });
+
   it("shows repository health, filters changes, and focuses global search", async () => {
     const user = userEvent.setup();
     render(<App />);

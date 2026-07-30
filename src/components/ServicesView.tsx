@@ -22,6 +22,7 @@ import type {
   TerminalEvent,
   TerminalKind,
   TerminalSession,
+  Theme,
 } from "../types";
 import { TerminalPane } from "./TerminalPane";
 
@@ -48,6 +49,7 @@ export function ServicesView({
   activeSessionId,
   onActiveSessionChange,
   onStartTerminal,
+  theme,
 }: {
   repositories: RepositorySummary[];
   activeSessionId: string | null;
@@ -57,6 +59,7 @@ export function ServicesView({
     kind: TerminalKind,
     option?: string,
   ) => Promise<void>;
+  theme: Theme;
 }) {
   const [sessions, setSessions] = useState<TerminalSession[]>([]);
   const [profiles, setProfiles] = useState<ServiceProfile[]>([]);
@@ -468,7 +471,7 @@ export function ServicesView({
                   </button>
                 </div>
               </header>
-              <TerminalPane session={activeSession} />
+              <TerminalPane session={activeSession} theme={theme} />
             </>
           ) : (
             <div className="terminal-welcome">

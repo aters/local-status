@@ -6,6 +6,12 @@ import { RepositoryMark } from "./RepositoryMark";
 
 const repository: RepositorySummary = {
   id: "changed-web",
+  groupId: "group-changed-web",
+  groupName: "changed-web",
+  remoteIdentity: "https://example.test/changed-web",
+  isPrimaryWorktree: true,
+  favourite: false,
+  archived: false,
   branch: "main",
   detached: false,
   unborn: false,

@@ -204,6 +204,54 @@ test("renders first-run onboarding with readable display typography", async ({
   await browser.close();
 });
 
+test("renders a cohesive light theme across repository surfaces", async ({
+}, testInfo) => {
+  const browser = await launchDesktop(9335);
+  const window = browser.contexts()[0].pages()[0];
+  await window.setViewportSize({ width: 1440, height: 900 });
+
+  await window.getByRole("button", { name: "Settings" }).click();
+  await window.getByRole("radio", { name: /Light/ }).click();
+  await expect(window.locator("html")).toHaveAttribute("data-theme", "light");
+  await window.getByRole("button", { name: "Repositories" }).click();
+  await window.getByText("changed-web").first().click();
+  await expect(window.getByRole("heading", { name: "changed-web" })).toBeVisible();
+
+  const colors = await window.evaluate(() => {
+    const background = (selector: string) =>
+      getComputedStyle(document.querySelector<HTMLElement>(selector)!).backgroundColor;
+    const foreground = (selector: string) =>
+      getComputedStyle(document.querySelector<HTMLElement>(selector)!).color;
+    return {
+      header: background(".app-header"),
+      navigation: background(".app-nav"),
+      activeNavigation: background(".app-nav button.is-active"),
+      summary: background(".overview-stats"),
+      repositories: background(".repo-panel"),
+      changes: background(".context-panel"),
+      viewer: background(".viewer-empty"),
+      viewerHeading: foreground(".viewer-empty h2"),
+    };
+  });
+
+  expect(colors).toMatchObject({
+    header: "rgba(255, 255, 255, 0.94)",
+    navigation: "rgb(247, 249, 248)",
+    activeNavigation: "rgb(229, 243, 237)",
+    summary: "rgb(247, 249, 248)",
+    repositories: "rgb(255, 255, 255)",
+    changes: "rgb(255, 255, 255)",
+    viewer: "rgb(247, 249, 248)",
+    viewerHeading: "rgb(24, 33, 29)",
+  });
+
+  await window.screenshot({
+    path: testInfo.outputPath("light-theme.png"),
+    animations: "disabled",
+  });
+  await browser.close();
+});
+
 test("opens repositories, renders a side-by-side diff, and runs an interactive service", async ({
 }, testInfo) => {
   const browser = await launchDesktop(9333);

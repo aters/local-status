@@ -191,6 +191,60 @@ async function isDirectGitRoot(directory) {
   }
 }
 
+function normalizeRemoteUrl(value) {
+  return value.trim().replace(/\/+$/, "").replace(/\.git$/i, "");
+}
+
+function repositoryNameFromRemote(remote, fallback) {
+  if (!remote) return fallback;
+  const normalized = remote.replace(/\\/g, "/");
+  const tail = normalized.split(/[/:]/).filter(Boolean).at(-1);
+  return tail || fallback;
+}
+
+async function repositoryIdentity(repository) {
+  const [originOutput, commonOutput, gitDirOutput] = await Promise.all([
+    execGit(repository.path, ["config", "--get", "remote.origin.url"], {
+      allowFailure: true,
+    }),
+    execGit(repository.path, ["rev-parse", "--git-common-dir"], {
+      allowFailure: true,
+    }),
+    execGit(repository.path, ["rev-parse", "--git-dir"], {
+      allowFailure: true,
+    }),
+  ]);
+  const remoteIdentity = originOutput?.trim()
+    ? normalizeRemoteUrl(originOutput)
+    : null;
+  const commonCandidate = commonOutput?.trim() || ".git";
+  const gitDirCandidate = gitDirOutput?.trim() || ".git";
+  const commonDirectory = await realpath(
+    isAbsolute(commonCandidate)
+      ? commonCandidate
+      : resolve(repository.path, commonCandidate),
+  ).catch(() =>
+    resolve(repository.path, commonCandidate),
+  );
+  const gitDirectory = await realpath(
+    isAbsolute(gitDirCandidate)
+      ? gitDirCandidate
+      : resolve(repository.path, gitDirCandidate),
+  ).catch(() =>
+    resolve(repository.path, gitDirCandidate),
+  );
+  // The Git common directory is shared only by a repository and its linked
+  // worktrees. Remote URLs are deliberately not used here: independent clones
+  // are separate working repositories and must remain independently favouritable.
+  const groupIdentity = `common:${commonDirectory}`;
+  return {
+    groupId: createHash("sha256").update(groupIdentity).digest("hex").slice(0, 20),
+    groupName: repositoryNameFromRemote(remoteIdentity, repository.id),
+    remoteIdentity,
+    isPrimaryWorktree: gitDirectory === commonDirectory,
+  };
+}
+
 export async function discoverRepositories({ refresh = false } = {}) {
   const root = workspaceRoot();
   if (
@@ -200,6 +254,10 @@ export async function discoverRepositories({ refresh = false } = {}) {
   ) {
     return repositoryCache.repositories;
   }
+  const cachedRepositories =
+    repositoryCache.root === root
+      ? repositoryCache.repositories
+      : new Map();
 
   const entries = await readdir(root, { withFileTypes: true });
   const candidates = (
@@ -222,17 +280,36 @@ export async function discoverRepositories({ refresh = false } = {}) {
     )
   ).filter(Boolean);
   const checks = await Promise.all(
-    candidates.map(async (candidate) => ({
-      ...candidate,
-      valid: await isDirectGitRoot(candidate.path),
-    })),
+    candidates.map(async (candidate) => {
+      const cached = cachedRepositories.get(candidate.id);
+      return {
+        ...candidate,
+        cached: cached?.path === candidate.path ? cached : null,
+        valid:
+          cached?.path === candidate.path
+            ? true
+            : await isDirectGitRoot(candidate.path),
+      };
+    }),
   );
   const seenPaths = new Set();
   const repositories = new Map();
   for (const candidate of checks.filter((entry) => entry.valid)) {
     if (seenPaths.has(candidate.path)) continue;
     seenPaths.add(candidate.path);
-    repositories.set(candidate.id, { id: candidate.id, path: candidate.path });
+    const identity = candidate.cached
+      ? {
+          groupId: candidate.cached.groupId,
+          groupName: candidate.cached.groupName,
+          remoteIdentity: candidate.cached.remoteIdentity,
+          isPrimaryWorktree: candidate.cached.isPrimaryWorktree,
+        }
+      : await repositoryIdentity(candidate);
+    repositories.set(candidate.id, {
+      id: candidate.id,
+      path: candidate.path,
+      ...identity,
+    });
   }
   repositoryCache = { at: Date.now(), root, repositories };
   return repositories;
@@ -416,6 +493,10 @@ export async function repositoryStatus(repository) {
   const summary = summarizeChanges(parsed.changes);
   return {
     id: repository.id,
+    groupId: repository.groupId,
+    groupName: repository.groupName,
+    remoteIdentity: repository.remoteIdentity,
+    isPrimaryWorktree: repository.isPrimaryWorktree,
     branch: parsed.branch.head === "(detached)" ? null : parsed.branch.head || null,
     detached: parsed.branch.head === "(detached)",
     unborn:
@@ -433,15 +514,43 @@ export async function repositoryStatus(repository) {
   };
 }
 
-export async function listRepositorySummaries() {
+export async function listRepositorySummaries({ archivedGroupIds = [] } = {}) {
   const repositories = await discoverRepositories({ refresh: true });
+  const archivedGroups = new Set(archivedGroupIds);
   const summaries = await Promise.all(
     [...repositories.values()].map(async (repository) => {
+      if (archivedGroups.has(repository.groupId)) {
+        return {
+          id: repository.id,
+          groupId: repository.groupId,
+          groupName: repository.groupName,
+          remoteIdentity: repository.remoteIdentity,
+          isPrimaryWorktree: repository.isPrimaryWorktree,
+          archived: true,
+          branch: null,
+          detached: false,
+          unborn: false,
+          headSha: null,
+          upstream: null,
+          incoming: 0,
+          outgoing: 0,
+          summary: { files: 0, staged: 0, modified: 0, untracked: 0, conflicts: 0 },
+          latestCommit: null,
+          fetchedAt: fetchTimes.get(repository.id) ?? null,
+          scannedAt: new Date().toISOString(),
+          error: null,
+        };
+      }
       try {
-        return await repositoryStatus(repository);
+        return { ...(await repositoryStatus(repository)), archived: false };
       } catch (error) {
         return {
           id: repository.id,
+          groupId: repository.groupId,
+          groupName: repository.groupName,
+          remoteIdentity: repository.remoteIdentity,
+          isPrimaryWorktree: repository.isPrimaryWorktree,
+          archived: false,
           branch: null,
           detached: false,
           unborn: false,
@@ -482,6 +591,149 @@ export async function repositoryChanges(repositoryId) {
       (left, right) =>
         order[left.scope] - order[right.scope] || left.path.localeCompare(right.path),
     ),
+  };
+}
+
+export async function repositoryBranches(repositoryId) {
+  const repository = await getRepository(repositoryId);
+  const output = await execGit(repository.path, [
+    "for-each-ref",
+    "--format=%(refname)%09%(refname:short)%09%(HEAD)",
+    "refs/heads",
+    "refs/remotes",
+  ]);
+  const local = [];
+  const remote = [];
+  for (const line of output.split("\n")) {
+    if (!line) continue;
+    const [ref, name, headMarker] = line.split("\t");
+    if (!ref || !name || ref.endsWith("/HEAD")) continue;
+    const entry = {
+      name,
+      ref,
+      remote: ref.startsWith("refs/remotes/"),
+      current: headMarker?.trim() === "*",
+    };
+    (entry.remote ? remote : local).push(entry);
+  }
+  const order = (left, right) =>
+    Number(right.current) - Number(left.current) ||
+    left.name.localeCompare(right.name);
+  return {
+    repositoryId,
+    local: local.sort(order),
+    remote: remote.sort(order),
+  };
+}
+
+async function repositoryIsDirty(repository) {
+  const output = await execGit(repository.path, [
+    "status",
+    "--porcelain",
+    "--untracked-files=all",
+  ]);
+  return Boolean(output.trim());
+}
+
+export async function switchRepositoryBranch(
+  repositoryId,
+  targetRef,
+  { stashChanges = false } = {},
+) {
+  const repository = await getRepository(repositoryId);
+  const branches = await repositoryBranches(repositoryId);
+  const target = [...branches.local, ...branches.remote].find(
+    (entry) => entry.ref === targetRef,
+  );
+  if (!target) {
+    throw new GitServiceError("That branch is no longer available.", 404, "BRANCH_NOT_FOUND");
+  }
+  const dirty = await repositoryIsDirty(repository);
+  if (dirty && !stashChanges) {
+    return { repositoryId, requiresStash: true, cancelled: false };
+  }
+
+  let stashed = null;
+  if (dirty) {
+    const current = (await repositoryStatus(repository)).branch || "detached HEAD";
+    const message = `Local Status: ${current} → ${target.name}`;
+    await execGit(repository.path, [
+      "stash",
+      "push",
+      "--include-untracked",
+      "--message",
+      message,
+    ]);
+    stashed = { ref: "stash@{0}", message };
+  }
+
+  if (target.remote) {
+    const remoteName = target.name.split("/").slice(1).join("/");
+    const matchingLocal = branches.local.find((entry) => entry.name === remoteName);
+    if (matchingLocal) {
+      await execGit(repository.path, ["switch", matchingLocal.name]);
+    } else {
+      await execGit(repository.path, ["switch", "--track", target.name]);
+    }
+  } else {
+    await execGit(repository.path, ["switch", target.name]);
+  }
+
+  return {
+    repositoryId,
+    requiresStash: false,
+    cancelled: false,
+    stashed,
+    repository: await repositoryStatus(repository),
+  };
+}
+
+function stashSourceBranch(message) {
+  const localStatus = message.match(/^Local Status:\s+(.+?)\s+→/);
+  if (localStatus) return localStatus[1];
+  const standard = message.match(/^(?:WIP on|On)\s+([^:]+):/);
+  return standard?.[1] ?? null;
+}
+
+export async function repositoryStashes(repositoryId) {
+  const repository = await getRepository(repositoryId);
+  const output = await execGit(
+    repository.path,
+    ["stash", "list", "--format=%gd%x1f%gs%x1f%ci"],
+    { allowFailure: true },
+  );
+  const stashes = (output ?? "")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [ref, message = "", createdAt = ""] = line.split("\x1f");
+      return {
+        ref,
+        index: Number(ref.match(/\{(\d+)\}/)?.[1] ?? 0),
+        message,
+        branch: stashSourceBranch(message),
+        createdAt,
+      };
+    });
+  return { repositoryId, stashes };
+}
+
+export async function applyRepositoryStash(repositoryId, stashRef, mode) {
+  const repository = await getRepository(repositoryId);
+  const stashes = await repositoryStashes(repositoryId);
+  if (!stashes.stashes.some((stash) => stash.ref === stashRef)) {
+    throw new GitServiceError("That stash is no longer available.", 404, "STASH_NOT_FOUND");
+  }
+  if (!["apply", "pop"].includes(mode)) {
+    throw new GitServiceError("Invalid stash action.", 400, "INVALID_STASH_ACTION");
+  }
+  await execGit(repository.path, ["stash", mode, "--index", stashRef]);
+  return {
+    repositoryId,
+    mode,
+    stashRef,
+    changes: (await repositoryChanges(repositoryId)).changes,
+    stashes: (await repositoryStashes(repositoryId)).stashes,
   };
 }
 
@@ -1150,9 +1402,13 @@ async function mapWithConcurrency(items, concurrency, callback) {
   return results;
 }
 
-export async function fetchAll() {
+export async function fetchAll({ excludeGroupIds = [] } = {}) {
+  const excludedGroups = new Set(excludeGroupIds);
   const repositories = [...(await discoverRepositories({ refresh: true })).values()];
-  const results = await mapWithConcurrency(repositories, 3, async (repository) => {
+  const activeRepositories = repositories.filter(
+    (repository) => !excludedGroups.has(repository.groupId),
+  );
+  const results = await mapWithConcurrency(activeRepositories, 3, async (repository) => {
     try {
       return { ok: true, ...(await fetchRepository(repository)) };
     } catch (error) {

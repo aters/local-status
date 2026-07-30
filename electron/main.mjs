@@ -19,6 +19,7 @@ import {
   commitDetails,
   comparisonContents,
   createCommit,
+  applyRepositoryStash,
   fetchAll,
   fetchOne,
   getRepository,
@@ -26,12 +27,15 @@ import {
   listRepositorySummaries,
   localListeners,
   repositoryChanges,
+  repositoryBranches,
   repositoryCommits,
   repositoryFiles,
+  repositoryStashes,
   prepareCommit,
   revertChanges,
   stageChanges,
   syncRepository,
+  switchRepositoryBranch,
   unstageChanges,
 } from "../server/git-service.mjs";
 import { AiRunner } from "./codex-runner.mjs";
@@ -146,6 +150,40 @@ async function confirmStopForWorkspaceChange() {
   if (result.response !== 0) return false;
   await terminalManager.stopAll();
   return true;
+}
+
+async function repositoriesWithPreferences() {
+  const archived = new Set(
+    getWorkspaceRoot()
+      ? settingsStore.archivedGroupsFor(getWorkspaceRoot())
+      : [],
+  );
+  const response = await listRepositorySummaries({
+    archivedGroupIds: archived,
+  });
+  const favourites = new Set(
+    getWorkspaceRoot()
+      ? settingsStore.favouriteGroupsFor(getWorkspaceRoot())
+      : [],
+  );
+  return {
+    ...response,
+    repositories: response.repositories.map((repository) => ({
+      ...repository,
+      favourite: favourites.has(repository.groupId),
+    })),
+  };
+}
+
+async function requireActiveRepository(repositoryId) {
+  const repository = await getRepository(repositoryId);
+  const archived = new Set(
+    settingsStore.archivedGroupsFor(getWorkspaceRoot()),
+  );
+  if (archived.has(repository.groupId)) {
+    throw new Error("Restore this repository before running Git operations.");
+  }
+  return repository;
 }
 
 async function validatedWorkingDirectory(repositoryPath, relativePath) {
@@ -325,25 +363,58 @@ async function terminalSpec(input) {
 function registerIpc() {
   handle("workspace:get", () => workspaceManager.state());
   handle("workspace:choose", async () => {
-    if (!(await confirmStopForWorkspaceChange())) return workspaceManager.state();
+    if (!(await confirmStopForWorkspaceChange())) return null;
     const result = await dialog.showOpenDialog(mainWindow, {
       title: "Choose a multi-repository workspace",
       buttonLabel: "Use workspace",
       properties: ["openDirectory"],
     });
-    if (result.canceled || !result.filePaths[0]) return workspaceManager.state();
+    if (result.canceled || !result.filePaths[0]) return null;
     aiRunner.stopAll();
     return workspaceManager.open(result.filePaths[0]);
   });
   handle("workspace:open", async (payload) => {
-    if (!(await confirmStopForWorkspaceChange())) return workspaceManager.state();
+    if (!(await confirmStopForWorkspaceChange())) return null;
     aiRunner.stopAll();
     return workspaceManager.open(
       requireString(requireObject(payload).path, "workspace path"),
     );
   });
 
-  handle("repositories:list", () => listRepositorySummaries());
+  handle("repositories:list", () => repositoriesWithPreferences());
+  handle("repositories:set-favourite", async (payload) => {
+    const request = requireObject(payload);
+    const groupId = requireString(request.groupId, "repository group", 100);
+    const response = await listRepositorySummaries({
+      archivedGroupIds: settingsStore.archivedGroupsFor(getWorkspaceRoot()),
+    });
+    if (!response.repositories.some((repository) => repository.groupId === groupId)) {
+      throw new Error("Repository group not found.");
+    }
+    await settingsStore.setFavouriteGroup(
+      getWorkspaceRoot(),
+      groupId,
+      request.favourite === true,
+    );
+    return repositoriesWithPreferences();
+  });
+  handle("repositories:set-archived", async (payload) => {
+    const request = requireObject(payload);
+    const groupId = requireString(request.groupId, "repository group", 100);
+    const archivedGroups = settingsStore.archivedGroupsFor(getWorkspaceRoot());
+    const response = await listRepositorySummaries({
+      archivedGroupIds: archivedGroups,
+    });
+    if (!response.repositories.some((repository) => repository.groupId === groupId)) {
+      throw new Error("Repository group not found.");
+    }
+    await settingsStore.setArchivedGroup(
+      getWorkspaceRoot(),
+      groupId,
+      request.archived === true,
+    );
+    return repositoriesWithPreferences();
+  });
   handle("repositories:changes", (payload) =>
     repositoryChanges(requireString(requireObject(payload).repositoryId, "repository")),
   );
@@ -374,10 +445,19 @@ function registerIpc() {
       requireObject(request.options, "comparison"),
     );
   });
-  handle("repositories:fetch", (payload) =>
-    fetchOne(requireString(requireObject(payload).repositoryId, "repository")),
+  handle("repositories:fetch", async (payload) => {
+    const repositoryId = requireString(
+      requireObject(payload).repositoryId,
+      "repository",
+    );
+    await requireActiveRepository(repositoryId);
+    return fetchOne(repositoryId);
+  });
+  handle("repositories:fetch-all", () =>
+    fetchAll({
+      excludeGroupIds: settingsStore.archivedGroupsFor(getWorkspaceRoot()),
+    }),
   );
-  handle("repositories:fetch-all", () => fetchAll());
   handle("repositories:prepare-commit", (payload) =>
     prepareCommit(
       requireString(requireObject(payload).repositoryId, "repository"),
@@ -413,9 +493,14 @@ function registerIpc() {
     }
     return revertChanges(repositoryId, selection);
   });
-  handle("repositories:sync", (payload) =>
-    syncRepository(requireString(requireObject(payload).repositoryId, "repository")),
-  );
+  handle("repositories:sync", async (payload) => {
+    const repositoryId = requireString(
+      requireObject(payload).repositoryId,
+      "repository",
+    );
+    await requireActiveRepository(repositoryId);
+    return syncRepository(repositoryId);
+  });
   handle("repositories:scripts", async (payload) => {
     const repositoryId = requireString(
       requireObject(payload).repositoryId,
@@ -424,6 +509,60 @@ function registerIpc() {
     const repository = await getRepository(repositoryId);
     return { repositoryId, scripts: await discoverScripts(repository.path) };
   });
+  handle("repositories:branches", (payload) =>
+    repositoryBranches(
+      requireString(requireObject(payload).repositoryId, "repository"),
+    ),
+  );
+  handle("repositories:switch-branch", async (payload) => {
+    const request = requireObject(payload);
+    const repositoryId = requireString(request.repositoryId, "repository");
+    const targetRef = requireString(request.targetRef, "branch", 1_024);
+    const initial = await switchRepositoryBranch(repositoryId, targetRef);
+    if (!initial.requiresStash) return initial;
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: "warning",
+      title: "Stash changes before switching?",
+      message: "This checkout has local changes.",
+      detail:
+        "Local Status can stash tracked and untracked files, switch branches, and keep the stash for you to restore later.",
+      buttons: ["Stash and switch", "Cancel"],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    });
+    if (result.response !== 0) {
+      return {
+        repositoryId,
+        requiresStash: false,
+        cancelled: true,
+        stashed: null,
+      };
+    }
+    return switchRepositoryBranch(repositoryId, targetRef, {
+      stashChanges: true,
+    });
+  });
+  handle("repositories:stashes", (payload) =>
+    repositoryStashes(
+      requireString(requireObject(payload).repositoryId, "repository"),
+    ),
+  );
+  handle("repositories:stash-action", (payload) => {
+    const request = requireObject(payload);
+    return applyRepositoryStash(
+      requireString(request.repositoryId, "repository"),
+      requireString(request.stashRef, "stash", 100),
+      requireString(request.mode, "stash action", 20),
+    );
+  });
+
+  handle("preferences:get", () => settingsStore.preferences());
+  handle("preferences:set-theme", (payload) =>
+    settingsStore.setTheme(
+      requireString(requireObject(payload).theme, "theme", 20),
+    ),
+  );
 
   handle("ai:status", () => aiRunner.status());
   handle("ai:set-preferences", (payload) => {

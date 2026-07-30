@@ -1,6 +1,7 @@
 import {
   FolderOpen,
   GitBranch,
+  Settings,
   HardDrive,
   LockKeyhole,
   ServerCog,
@@ -10,6 +11,8 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import { RepositoryWorkspace } from "./components/RepositoryWorkspace";
 import { ServicesView } from "./components/ServicesView";
+import { SettingsView } from "./components/SettingsView";
+import { AppTooltip } from "./components/AppTooltip";
 import { routeParams, updateRoute } from "./route";
 import type {
   AiProvider,
@@ -17,10 +20,11 @@ import type {
   RepositoriesResponse,
   TerminalKind,
   TerminalSession,
+  Theme,
   WorkspaceState,
 } from "./types";
 
-type AppView = "repositories" | "services";
+type AppView = "repositories" | "services" | "settings";
 
 function ProductLogo({ className }: { className: string }) {
   return (
@@ -35,7 +39,8 @@ function ProductLogo({ className }: { className: string }) {
 }
 
 function initialView(): AppView {
-  return routeParams().get("view") === "services" ? "services" : "repositories";
+  const value = routeParams().get("view");
+  return value === "services" || value === "settings" ? value : "repositories";
 }
 
 function shellArgument(value: string) {
@@ -110,6 +115,12 @@ function Onboarding({
 
 export function App() {
   const [view, setView] = useState<AppView>(initialView);
+  const [theme, setTheme] = useState<Theme>(() => {
+    const saved = window.localStorage.getItem("local-status:theme");
+    const initial = saved === "dark" || saved === "light" ? saved : "green";
+    document.documentElement.dataset.theme = initial;
+    return initial;
+  });
   const [workspace, setWorkspace] = useState<WorkspaceState | null>(null);
   const [repositories, setRepositories] = useState<RepositoriesResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -161,6 +172,20 @@ export function App() {
   }, [applyWorkspaceState]);
 
   useEffect(() => {
+    void api
+      .preferences()
+      .then((preferences) => setTheme(preferences.theme))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme =
+      theme === "light" ? "light" : "dark";
+    window.localStorage.setItem("local-status:theme", theme);
+  }, [theme]);
+
+  useEffect(() => {
     if (!workspacePath) return;
     const interval = window.setInterval(() => void refreshRepositories(), 10_000);
     const focus = () => void refreshRepositories();
@@ -175,7 +200,13 @@ export function App() {
     setWorkspaceBusy(true);
     setError(null);
     try {
-      await applyWorkspaceState(await api.chooseWorkspace());
+      const next = await api.chooseWorkspace();
+      if (!next) return;
+      if (next.current?.path === workspacePath) {
+        setWorkspace(next);
+        return;
+      }
+      await applyWorkspaceState(next);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not open that workspace.");
     } finally {
@@ -187,7 +218,13 @@ export function App() {
     setWorkspaceBusy(true);
     setError(null);
     try {
-      await applyWorkspaceState(await api.openWorkspace(path));
+      const next = await api.openWorkspace(path);
+      if (!next) return;
+      if (next.current?.path === workspacePath) {
+        setWorkspace(next);
+        return;
+      }
+      await applyWorkspaceState(next);
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "That workspace is no longer available.",
@@ -200,6 +237,26 @@ export function App() {
   function selectView(next: AppView) {
     setView(next);
     updateRoute({ view: next }, "push");
+  }
+
+  async function changeTheme(next: Theme) {
+    const previous = theme;
+    setTheme(next);
+    try {
+      const preferences = await api.setTheme(next);
+      setTheme(preferences.theme);
+    } catch (caught) {
+      if (
+        caught instanceof Error &&
+        /no handler registered|preferences.*undefined|cannot read properties/i.test(
+          caught.message,
+        )
+      ) {
+        return;
+      }
+      setTheme(previous);
+      throw caught;
+    }
   }
 
   async function startTerminal(
@@ -278,6 +335,7 @@ export function App() {
 
   return (
     <div className="app-shell">
+      <AppTooltip />
       <header className="app-header">
         <div className="app-brand">
           <ProductLogo className="brand-mark" />
@@ -293,7 +351,7 @@ export function App() {
             onClick={() => selectView("repositories")}
           >
             <GitBranch size={15} />
-            Repositories
+            <span>Repositories</span>
           </button>
           <button
             type="button"
@@ -301,20 +359,33 @@ export function App() {
             onClick={() => selectView("services")}
           >
             <ServerCog size={15} />
-            Services
+            <span>Services</span>
           </button>
         </nav>
-        <button
-          className="workspace-switcher"
-          type="button"
-          onClick={() => void chooseWorkspace()}
-          disabled={workspaceBusy}
-          title={workspace.current.path}
-        >
-          <FolderOpen size={14} />
-          <span>{workspace.current.name}</span>
-          <small>Change</small>
-        </button>
+        <div className="app-header__actions">
+          <button
+            className="workspace-switcher"
+            type="button"
+            onClick={() => void chooseWorkspace()}
+            disabled={workspaceBusy}
+            title={workspace.current.path}
+          >
+            <FolderOpen size={14} />
+            <span>{workspace.current.name}</span>
+            <small>Change</small>
+          </button>
+          <button
+            className={`icon-button app-settings-button ${
+              view === "settings" ? "is-active" : ""
+            }`}
+            type="button"
+            aria-label="Settings"
+            data-tooltip="Settings"
+            onClick={() => selectView("settings")}
+          >
+            <Settings size={16} />
+          </button>
+        </div>
       </header>
 
       {view === "repositories" ? (
@@ -325,17 +396,25 @@ export function App() {
           onRefresh={refreshRepositories}
           onStartTerminal={startTerminal}
           onStartAiTerminal={startAiTerminal}
+          theme={theme}
         />
-      ) : (
+      ) : view === "services" ? (
         <ServicesView
-          repositories={repositories?.repositories ?? []}
+          repositories={
+            repositories?.repositories.filter(
+              (repository) => !repository.archived,
+            ) ?? []
+          }
           activeSessionId={activeSessionId}
           onActiveSessionChange={(sessionId) => {
             setActiveSessionId(sessionId);
             updateRoute({ view: "services", terminal: sessionId });
           }}
           onStartTerminal={startTerminal}
+          theme={theme}
         />
+      ) : (
+        <SettingsView theme={theme} onThemeChange={changeTheme} />
       )}
     </div>
   );

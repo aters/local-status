@@ -12,16 +12,88 @@ import {
   useState,
 } from "react";
 import { api } from "../api";
-import type { TerminalEvent, TerminalSession } from "../types";
+import type { TerminalEvent, TerminalSession, Theme } from "../types";
 
 export interface TerminalPaneHandle {
   focus: () => void;
 }
 
+const terminalThemes: Record<Theme, NonNullable<ConstructorParameters<typeof Terminal>[0]>["theme"]> = {
+  green: {
+    background: "#08100e",
+    foreground: "#d7e3dd",
+    cursor: "#69e5a5",
+    cursorAccent: "#08100e",
+    selectionBackground: "#28533f",
+    black: "#0b1210",
+    red: "#f27b83",
+    green: "#69e5a5",
+    yellow: "#e2c276",
+    blue: "#67a6d8",
+    magenta: "#bb8ad7",
+    cyan: "#4fd1c5",
+    white: "#d7e3dd",
+    brightBlack: "#587068",
+    brightRed: "#ff9298",
+    brightGreen: "#8af0ba",
+    brightYellow: "#f2d58c",
+    brightBlue: "#86bee7",
+    brightMagenta: "#d1a2e9",
+    brightCyan: "#7ce4da",
+    brightWhite: "#f3f7f5",
+  },
+  dark: {
+    background: "#171717",
+    foreground: "#ececec",
+    cursor: "#ffffff",
+    cursorAccent: "#171717",
+    selectionBackground: "#4a4a4a",
+    black: "#202020",
+    red: "#ff7b72",
+    green: "#7ee787",
+    yellow: "#e3b341",
+    blue: "#79c0ff",
+    magenta: "#d2a8ff",
+    cyan: "#56d4dd",
+    white: "#e6edf3",
+    brightBlack: "#8b949e",
+    brightRed: "#ffa198",
+    brightGreen: "#aff5b4",
+    brightYellow: "#f2cc60",
+    brightBlue: "#a5d6ff",
+    brightMagenta: "#e2c5ff",
+    brightCyan: "#a2e8ed",
+    brightWhite: "#ffffff",
+  },
+  light: {
+    background: "#ffffff",
+    foreground: "#252525",
+    cursor: "#111111",
+    cursorAccent: "#ffffff",
+    selectionBackground: "#c9def5",
+    black: "#24292f",
+    red: "#cf222e",
+    green: "#116329",
+    yellow: "#9a6700",
+    blue: "#0969da",
+    magenta: "#8250df",
+    cyan: "#1b7c83",
+    white: "#6e7781",
+    brightBlack: "#57606a",
+    brightRed: "#a40e26",
+    brightGreen: "#1a7f37",
+    brightYellow: "#bf8700",
+    brightBlue: "#218bff",
+    brightMagenta: "#a475f9",
+    brightCyan: "#3192aa",
+    brightWhite: "#f6f8fa",
+  },
+};
+
 export const TerminalPane = forwardRef<
   TerminalPaneHandle,
-  { session: TerminalSession; autoFocus?: boolean }
->(function TerminalPane({ session, autoFocus = false }, ref) {
+  { session: TerminalSession; autoFocus?: boolean; theme: Theme }
+>(function TerminalPane({ session, autoFocus = false, theme }, ref) {
   const hostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
@@ -42,32 +114,10 @@ export const TerminalPane = forwardRef<
       cursorStyle: "bar",
       fontFamily:
         '"DM Mono", "SFMono-Regular", Menlo, Monaco, Consolas, monospace',
-      fontSize: 12.5,
+      fontSize: 14,
       lineHeight: 1.25,
       scrollback: 10_000,
-      theme: {
-        background: "#08100e",
-        foreground: "#d7e3dd",
-        cursor: "#69e5a5",
-        cursorAccent: "#08100e",
-        selectionBackground: "#28533f",
-        black: "#0b1210",
-        red: "#f27b83",
-        green: "#69e5a5",
-        yellow: "#e2c276",
-        blue: "#67a6d8",
-        magenta: "#bb8ad7",
-        cyan: "#4fd1c5",
-        white: "#d7e3dd",
-        brightBlack: "#587068",
-        brightRed: "#ff9298",
-        brightGreen: "#8af0ba",
-        brightYellow: "#f2d58c",
-        brightBlue: "#86bee7",
-        brightMagenta: "#d1a2e9",
-        brightCyan: "#7ce4da",
-        brightWhite: "#f3f7f5",
-      },
+      theme: terminalThemes[theme],
     });
     const fit = new FitAddon();
     const search = new SearchAddon();
@@ -114,7 +164,7 @@ export const TerminalPane = forwardRef<
       terminalRef.current = null;
       searchAddonRef.current = null;
     };
-  }, [autoFocus, session.id, session.buffer, session.truncated]);
+  }, [autoFocus, session.id, session.buffer, session.truncated, theme]);
 
   function closeSearch() {
     setSearchOpen(false);

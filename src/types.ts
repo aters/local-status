@@ -19,6 +19,12 @@ export interface WorkspaceState {
   recent: Workspace[];
 }
 
+export type Theme = "green" | "dark" | "light";
+
+export interface Preferences {
+  theme: Theme;
+}
+
 export interface Commit {
   sha: string;
   shortSha: string;
@@ -31,6 +37,12 @@ export interface Commit {
 
 export interface RepositorySummary {
   id: string;
+  groupId: string;
+  groupName: string;
+  remoteIdentity: string | null;
+  isPrimaryWorktree: boolean;
+  favourite: boolean;
+  archived: boolean;
   branch: string | null;
   detached: boolean;
   unborn: boolean;
@@ -183,6 +195,46 @@ export interface RepositoryScript {
   args: string[];
 }
 
+export interface RepositoryBranch {
+  name: string;
+  ref: string;
+  remote: boolean;
+  current: boolean;
+}
+
+export interface RepositoryBranches {
+  repositoryId: string;
+  local: RepositoryBranch[];
+  remote: RepositoryBranch[];
+}
+
+export interface BranchSwitchResult {
+  repositoryId: string;
+  requiresStash: boolean;
+  cancelled: boolean;
+  stashed?: { ref: string; message: string } | null;
+  repository?: RepositorySummary;
+}
+
+export interface RepositoryStash {
+  ref: string;
+  index: number;
+  message: string;
+  branch: string | null;
+  createdAt: string;
+}
+
+export interface RepositoryStashes {
+  repositoryId: string;
+  stashes: RepositoryStash[];
+}
+
+export interface StashActionResult extends RepositoryStashes {
+  mode: "apply" | "pop";
+  stashRef: string;
+  changes: ChangeItem[];
+}
+
 export interface ServiceProfile {
   id: string;
   repositoryId: string;
@@ -214,14 +266,14 @@ export type TerminalEvent =
   | { type: "output"; sessionId: string; data: string; truncated: boolean }
   | { type: "removed"; sessionId: string };
 
-export type RepositoryTab = "changes" | "commits" | "files";
+export type RepositoryTab = "changes" | "commits" | "files" | "stashes";
 export type CommitScope = "local" | "incoming" | "outgoing";
 
 export interface LocalStatusBridge {
   workspace: {
     getCurrent(): Promise<WorkspaceState>;
-    choose(): Promise<WorkspaceState>;
-    openRecent(path: string): Promise<WorkspaceState>;
+    choose(): Promise<WorkspaceState | null>;
+    openRecent(path: string): Promise<WorkspaceState | null>;
   };
   repositories: {
     list(): Promise<RepositoriesResponse>;
@@ -288,6 +340,29 @@ export interface LocalStatusBridge {
       repositoryId: string;
       scripts: RepositoryScript[];
     }>;
+    setFavourite(
+      groupId: string,
+      favourite: boolean,
+    ): Promise<RepositoriesResponse>;
+    setArchived(
+      groupId: string,
+      archived: boolean,
+    ): Promise<RepositoriesResponse>;
+    branches(repositoryId: string): Promise<RepositoryBranches>;
+    switchBranch(
+      repositoryId: string,
+      targetRef: string,
+    ): Promise<BranchSwitchResult>;
+    stashes(repositoryId: string): Promise<RepositoryStashes>;
+    stashAction(
+      repositoryId: string,
+      stashRef: string,
+      mode: "apply" | "pop",
+    ): Promise<StashActionResult>;
+  };
+  preferences: {
+    get(): Promise<Preferences>;
+    setTheme(theme: Theme): Promise<Preferences>;
   };
   ai: {
     status(): Promise<AiStatus>;

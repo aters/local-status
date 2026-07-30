@@ -34,6 +34,22 @@ contextBridge.exposeInMainWorld("localStatus", {
       invoke("repositories:revert", { repositoryId, selection }),
     sync: (repositoryId) => invoke("repositories:sync", { repositoryId }),
     scripts: (repositoryId) => invoke("repositories:scripts", { repositoryId }),
+    setFavourite: (groupId, favourite) =>
+      invoke("repositories:set-favourite", { groupId, favourite }),
+    setArchived: (groupId, archived) =>
+      invoke("repositories:set-archived", { groupId, archived }),
+    branches: (repositoryId) =>
+      invoke("repositories:branches", { repositoryId }),
+    switchBranch: (repositoryId, targetRef) =>
+      invoke("repositories:switch-branch", { repositoryId, targetRef }),
+    stashes: (repositoryId) =>
+      invoke("repositories:stashes", { repositoryId }),
+    stashAction: (repositoryId, stashRef, mode) =>
+      invoke("repositories:stash-action", { repositoryId, stashRef, mode }),
+  },
+  preferences: {
+    get: () => invoke("preferences:get"),
+    setTheme: (theme) => invoke("preferences:set-theme", { theme }),
   },
   ai: {
     status: () => invoke("ai:status"),

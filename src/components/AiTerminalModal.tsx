@@ -7,6 +7,7 @@ import type {
   AiTerminalAction,
   TerminalEvent,
   TerminalSession,
+  Theme,
 } from "../types";
 import { TerminalPane } from "./TerminalPane";
 
@@ -14,6 +15,7 @@ interface AiTerminalModalProps {
   session: TerminalSession;
   provider: AiProvider;
   action: AiTerminalAction;
+  theme: Theme;
   onClose: () => void;
 }
 
@@ -21,6 +23,7 @@ export function AiTerminalModal({
   session,
   provider,
   action,
+  theme,
   onClose,
 }: AiTerminalModalProps) {
   const [currentSession, setCurrentSession] = useState(session);
@@ -133,7 +136,7 @@ export function AiTerminalModal({
           className="ai-terminal-modal__terminal"
           onKeyDown={(event) => event.stopPropagation()}
         >
-          <TerminalPane session={currentSession} autoFocus />
+          <TerminalPane session={currentSession} autoFocus theme={theme} />
         </div>
 
         <footer className="ai-terminal-modal__footer">

@@ -44,6 +44,32 @@ export const api = {
   ) => bridge().repositories.revert(repositoryId, selection),
   sync: (repositoryId: string) => bridge().repositories.sync(repositoryId),
   scripts: (repositoryId: string) => bridge().repositories.scripts(repositoryId),
+  setFavourite: (groupId: string, favourite: boolean) =>
+    bridge().repositories.setFavourite(groupId, favourite),
+  setArchived: (groupId: string, archived: boolean) =>
+    bridge().repositories.setArchived(groupId, archived),
+  branches: (repositoryId: string) =>
+    bridge().repositories.branches(repositoryId),
+  switchBranch: (repositoryId: string, targetRef: string) =>
+    bridge().repositories.switchBranch(repositoryId, targetRef),
+  stashes: (repositoryId: string) =>
+    bridge().repositories.stashes(repositoryId),
+  stashAction: (
+    repositoryId: string,
+    stashRef: string,
+    mode: "apply" | "pop",
+  ) => bridge().repositories.stashAction(repositoryId, stashRef, mode),
+  preferences: () =>
+    bridge().preferences?.get() ??
+    Promise.resolve({
+      theme:
+        window.localStorage.getItem("local-status:theme") === "dark" ||
+        window.localStorage.getItem("local-status:theme") === "light"
+          ? window.localStorage.getItem("local-status:theme") as "dark" | "light"
+          : "green",
+    }),
+  setTheme: (theme: Parameters<LocalStatusBridge["preferences"]["setTheme"]>[0]) =>
+    bridge().preferences?.setTheme(theme) ?? Promise.resolve({ theme }),
   aiStatus: () => bridge().ai.status(),
   setAiPreferences: (
     provider: Parameters<LocalStatusBridge["ai"]["setPreferences"]>[0],
