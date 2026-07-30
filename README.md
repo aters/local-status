@@ -12,7 +12,7 @@ in one folder.
 - Direct-child repository discovery
 - Working changes, commits, file trees, and incoming/outgoing status
 - Side-by-side and inline Monaco diffs with rendered Markdown previews
-- Stage, unstage, commit, revert, fetch, and fast-forward-only sync
+- Stage, unstage, stash, commit, revert, fetch, and fast-forward-only sync
 - Open pull requests created by you or waiting for your review
 - Optional commit-message drafts from an installed Codex or Claude CLI
 - Interactive terminals and detected package scripts
@@ -64,6 +64,12 @@ Commit opens a review window and commits staged changes only. Write the message
 yourself or generate an editable draft with Codex CLI or Claude CLI. Choose the
 provider and model in the commit window. Local Status does not read or store CLI
 credentials.
+
+Stash saves all current changes or one selected file. Bulk stashes include
+untracked files by default but never include ignored files. The Stashes tab
+shows saved files and diffs. Apply keeps the stash; Pop removes it after a
+successful restore. Both restore the original staged state. Restoring over local
+changes requires confirmation, and a stash is kept if conflicts occur.
 
 Generated-message input is capped at a 1 MB patch. If the patch is larger, the
 model still receives the complete staged file list, status and statistics, plus

@@ -47,7 +47,18 @@ async function launchDesktop(port: number, workspace: string | null = fixtureRoo
     }
     try {
       const response = await fetch(`http://127.0.0.1:${port}/json/version`);
-      if (response.ok) return chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+      if (response.ok) {
+        const browser = await chromium.connectOverCDP(
+          `http://127.0.0.1:${port}`,
+        );
+        for (let pageAttempt = 0; pageAttempt < 50; pageAttempt += 1) {
+          if (browser.contexts()[0]?.pages()[0]) return browser;
+          await new Promise((resolvePromise) =>
+            setTimeout(resolvePromise, 100),
+          );
+        }
+        await browser.close();
+      }
     } catch {
       // Electron is still opening.
     }
@@ -365,6 +376,55 @@ test("opens repositories, renders a side-by-side diff, and runs an interactive s
   await window.getByRole("button", { name: "Stage README.md" }).click();
   await expect(window.getByRole("button", { name: "Unstage README.md" })).toBeVisible();
   await window.getByRole("button", { name: "Unstage README.md" }).click();
+  await expect(window.getByRole("button", { name: "Stage README.md" })).toBeVisible();
+
+  await window.locator('.change-row__select[title="README.md"]').click();
+  await window.keyboard.down("Shift");
+  await window.locator('.change-row__select[title="package.json"]').click();
+  await window.keyboard.up("Shift");
+  await expect(window.locator(".change-row.is-selected")).toHaveCount(2);
+  await window
+    .getByRole("button", { name: "Stage 2 selected files" })
+    .first()
+    .click();
+  await expect(
+    window.getByRole("button", { name: "Unstage README.md" }),
+  ).toBeVisible();
+
+  await window.locator('.change-row__select[title="README.md"]').click();
+  await window.keyboard.down("Shift");
+  await window.locator('.change-row__select[title="package.json"]').click();
+  await window.keyboard.up("Shift");
+  await window
+    .getByRole("button", { name: "Unstage 2 selected files" })
+    .last()
+    .click();
+  await expect(window.getByRole("button", { name: "Stage README.md" })).toBeVisible();
+
+  await window.getByRole("button", { name: "Stash", exact: true }).click();
+  const stashDialog = window.getByRole("dialog", { name: "Stash changes" });
+  await expect(stashDialog).toBeVisible();
+  await expect(
+    stashDialog.getByRole("checkbox", { name: /Include untracked files/ }),
+  ).toBeChecked();
+  await stashDialog.getByPlaceholder("What are you saving?").fill("before remote sync");
+  await stashDialog.getByRole("button", { name: "Stash changes" }).click();
+  await expect(window.getByRole("button", { name: "View stash" })).toBeVisible();
+  await window.getByRole("button", { name: "View stash" }).click();
+
+  const stashRow = window.getByRole("button", { name: /before remote sync/ });
+  await expect(stashRow).toBeVisible();
+  await expect(window.getByRole("heading", { name: "before remote sync" })).toBeVisible();
+  await window.screenshot({
+    path: testInfo.outputPath("stash-detail.png"),
+    animations: "disabled",
+  });
+  await window.getByRole("button", { name: /README\.md/ }).last().click();
+  await expect(window.locator(".monaco-diff-editor")).toBeVisible();
+  await stashRow.click();
+  await window.getByRole("button", { name: "Pop" }).click();
+  await expect(window.getByText("Popped stash@{0}.")).toBeVisible();
+  await window.getByRole("tab", { name: /Changes/ }).click();
   await expect(window.getByRole("button", { name: "Stage README.md" })).toBeVisible();
 
   await window

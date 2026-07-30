@@ -25,6 +25,7 @@ const GIT_TIMEOUT_MS = 10_000;
 const FETCH_TIMEOUT_MS = 60_000;
 const SYNC_TIMEOUT_MS = 120_000;
 const COMMIT_TIMEOUT_MS = 120_000;
+const STASH_TIMEOUT_MS = 120_000;
 const MAX_GIT_OUTPUT = 12 * 1024 * 1024;
 const MAX_COMMIT_DIFF_BYTES = 1_000_000;
 const PATH_CHUNK_SIZE = 200;
@@ -46,10 +47,29 @@ export class GitServiceError extends Error {
   }
 }
 
-function cleanGitError(error) {
+export function cleanGitError(error) {
   const stderr = typeof error?.stderr === "string" ? error.stderr.trim() : "";
-  const firstLine = stderr.split("\n").find(Boolean);
-  return firstLine?.replace(/^fatal:\s*/i, "") || "Git could not complete the request.";
+  const lines = stderr
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter(
+      (line) =>
+        !/^Auto packing the repository in background for optimum performance\.?$/i.test(
+          line,
+        ) &&
+        !/^See ['"]git help gc['"] for manual housekeeping\.?$/i.test(line),
+    );
+  const important =
+    lines.find((line) => /identity unknown/i.test(line)) ??
+    lines.find((line) => /^(?:fatal|error):/i.test(line)) ??
+    lines.find((line) => /^CONFLICT\b/i.test(line)) ??
+    lines.find((line) => /\[(?:rejected|remote rejected)\]/i.test(line)) ??
+    lines.find((line) => !/^hint:/i.test(line));
+  return (
+    important?.replace(/^(?:fatal|error):\s*/i, "") ||
+    "Git could not complete the request."
+  );
 }
 
 async function execGit(repository, args, options = {}) {
@@ -692,55 +712,6 @@ export async function switchRepositoryBranch(
   };
 }
 
-function stashSourceBranch(message) {
-  const localStatus = message.match(/^Local Status:\s+(.+?)\s+→/);
-  if (localStatus) return localStatus[1];
-  const standard = message.match(/^(?:WIP on|On)\s+([^:]+):/);
-  return standard?.[1] ?? null;
-}
-
-export async function repositoryStashes(repositoryId) {
-  const repository = await getRepository(repositoryId);
-  const output = await execGit(
-    repository.path,
-    ["stash", "list", "--format=%gd%x1f%gs%x1f%ci"],
-    { allowFailure: true },
-  );
-  const stashes = (output ?? "")
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      const [ref, message = "", createdAt = ""] = line.split("\x1f");
-      return {
-        ref,
-        index: Number(ref.match(/\{(\d+)\}/)?.[1] ?? 0),
-        message,
-        branch: stashSourceBranch(message),
-        createdAt,
-      };
-    });
-  return { repositoryId, stashes };
-}
-
-export async function applyRepositoryStash(repositoryId, stashRef, mode) {
-  const repository = await getRepository(repositoryId);
-  const stashes = await repositoryStashes(repositoryId);
-  if (!stashes.stashes.some((stash) => stash.ref === stashRef)) {
-    throw new GitServiceError("That stash is no longer available.", 404, "STASH_NOT_FOUND");
-  }
-  if (!["apply", "pop"].includes(mode)) {
-    throw new GitServiceError("Invalid stash action.", 400, "INVALID_STASH_ACTION");
-  }
-  await execGit(repository.path, ["stash", mode, "--index", stashRef]);
-  return {
-    repositoryId,
-    mode,
-    stashRef,
-    changes: (await repositoryChanges(repositoryId)).changes,
-    stashes: (await repositoryStashes(repositoryId)).stashes,
-  };
-}
-
 const actionableScopes = new Set([
   "conflict",
   "staged",
@@ -760,17 +731,28 @@ function selectedChanges(repositoryPath, changes, selection, allowedScopes) {
           (change) => change.scope === "working" || change.scope === "untracked",
         )
       : changes.filter((change) => change.scope === scope);
-  if (selection.path === undefined || selection.path === null) return scoped;
-  const { normalizedPath } = safeRepoPath(repositoryPath, selection.path);
-  const match = scoped.find((change) => change.path === normalizedPath);
-  if (!match) {
+  const requested =
+    Array.isArray(selection.paths) && selection.paths.length
+      ? selection.paths
+      : selection.path === undefined || selection.path === null
+        ? null
+        : [selection.path];
+  if (!requested) return scoped;
+  const normalizedPaths = new Set(
+    requested.map(
+      (filePath) => safeRepoPath(repositoryPath, filePath).normalizedPath,
+    ),
+  );
+  const matches = scoped.filter((change) => normalizedPaths.has(change.path));
+  const matchedPaths = new Set(matches.map((change) => change.path));
+  if (matchedPaths.size !== normalizedPaths.size) {
     throw new GitServiceError(
-      "This file has changed since the view was refreshed.",
+      "One or more selected files changed since the view was refreshed.",
       409,
       "STALE_CHANGE",
     );
   }
-  return [match];
+  return matches;
 }
 
 function pathsForChanges(changes) {
@@ -1093,6 +1075,309 @@ function parseNameStatus(output) {
   return files.filter((file) => file.path);
 }
 
+function parseStashSubject(subject) {
+  const match = subject.match(/^(?:WIP on|On) ([^:]+):\s*(.*)$/);
+  return {
+    branch: match?.[1] ?? null,
+    message: match?.[2] || subject,
+  };
+}
+
+async function stashMetadata(repository) {
+  const output = await execGit(repository.path, [
+    "stash",
+    "list",
+    "--max-count=100",
+    "--format=%H%x1f%gd%x1f%gs%x1f%aI%x1e",
+  ]);
+  return output
+    .split("\x1e")
+    .map((record) => record.trim())
+    .filter(Boolean)
+    .map((record) => {
+      const [id, ref, subject, createdAt] = record.split("\x1f");
+      const parsed = parseStashSubject(subject);
+      return {
+        id,
+        ref,
+        subject,
+        message: parsed.message,
+        branch: parsed.branch,
+        createdAt,
+      };
+    });
+}
+
+async function filesInStash(repository, stash) {
+  const output = await execGit(repository.path, [
+    "stash",
+    "show",
+    "--include-untracked",
+    "--name-status",
+    "-M",
+    "-z",
+    stash.id,
+  ]);
+  return parseNameStatus(output);
+}
+
+async function resolveCurrentStash(repository, stashId) {
+  if (!/^[0-9a-f]{40}$/i.test(stashId || "")) {
+    throw new GitServiceError("Stash not found.", 404, "STASH_NOT_FOUND");
+  }
+  const stash = (await stashMetadata(repository)).find(
+    (candidate) => candidate.id === stashId,
+  );
+  if (!stash) {
+    throw new GitServiceError(
+      "This stash no longer exists. Refresh the stash list and try again.",
+      409,
+      "STALE_STASH",
+    );
+  }
+  return stash;
+}
+
+async function stashWithFileCount(repository, stash) {
+  const files = await filesInStash(repository, stash);
+  return { ...stash, fileCount: files.length };
+}
+
+export async function repositoryStashes(repositoryId) {
+  const repository = await getRepository(repositoryId);
+  const stashes = await stashMetadata(repository);
+  return {
+    repositoryId,
+    stashes: await mapWithConcurrency(
+      stashes,
+      4,
+      (stash) => stashWithFileCount(repository, stash),
+    ),
+  };
+}
+
+export async function stashDetails(repositoryId, stashId) {
+  const repository = await getRepository(repositoryId);
+  const stash = await resolveCurrentStash(repository, stashId);
+  const files = await filesInStash(repository, stash);
+  return {
+    repositoryId,
+    stash: { ...stash, fileCount: files.length },
+    files,
+  };
+}
+
+export async function createStash(repositoryId, input = {}) {
+  const repository = await getRepository(repositoryId);
+  const message =
+    typeof input.message === "string" ? input.message.trim() : "";
+  if (message.length > 200 || message.includes("\0")) {
+    throw new GitServiceError(
+      "Keep the stash message under 200 characters.",
+      400,
+      "INVALID_STASH_MESSAGE",
+    );
+  }
+  const hasHead = Boolean(
+    await execGit(repository.path, ["rev-parse", "--verify", "HEAD"], {
+      allowFailure: true,
+    }),
+  );
+  if (!hasHead) {
+    throw new GitServiceError(
+      "Create the repository’s first commit before stashing changes.",
+      409,
+      "STASH_REQUIRES_COMMIT",
+    );
+  }
+
+  const changes = await currentChanges(repository);
+  if (changes.some((change) => change.scope === "conflict")) {
+    throw new GitServiceError(
+      "Resolve existing conflicts before creating a stash.",
+      409,
+      "UNRESOLVED_CONFLICTS",
+    );
+  }
+
+  let selected = changes;
+  let paths = null;
+  let renamedSources = [];
+  if (input.path !== undefined && input.path !== null) {
+    const { normalizedPath } = safeRepoPath(repository.path, input.path);
+    selected = changes.filter((change) => change.path === normalizedPath);
+    if (!selected.length) {
+      throw new GitServiceError(
+        "This file has changed since the view was refreshed.",
+        409,
+        "STALE_CHANGE",
+      );
+    }
+    paths = [...new Set(selected.map((change) => change.path))];
+    renamedSources = [
+      ...new Set(
+        selected
+          .map((change) => change.previousPath)
+          .filter((path) => typeof path === "string"),
+      ),
+    ];
+  }
+
+  const includeUntracked = paths
+    ? selected.some((change) => change.scope === "untracked")
+    : input.includeUntracked !== false;
+  const eligible = selected.filter(
+    (change) => change.scope !== "untracked" || includeUntracked,
+  );
+  if (!eligible.length) {
+    throw new GitServiceError(
+      "There are no changes available to stash.",
+      409,
+      "NOTHING_TO_STASH",
+    );
+  }
+
+  const before = (await stashMetadata(repository))[0]?.id ?? null;
+  const args = ["stash", "push", "--quiet"];
+  if (includeUntracked) args.push("--include-untracked");
+  if (message) args.push("--message", message);
+  let pathInput;
+  if (paths) {
+    args.push("--pathspec-from-file=-", "--pathspec-file-nul");
+    pathInput = Buffer.from(`${paths.join("\0")}\0`);
+  }
+  await spawnGit(repository.path, args, {
+    input: pathInput,
+    timeout: STASH_TIMEOUT_MS,
+  });
+  if (renamedSources.length) {
+    await execGitPathChunks(
+      repository.path,
+      ["restore", "--source=HEAD", "--staged", "--worktree"],
+      renamedSources,
+    );
+  }
+
+  const created = (await stashMetadata(repository))[0];
+  if (!created || created.id === before) {
+    throw new GitServiceError(
+      "Git did not create a stash for these changes.",
+      409,
+      "NOTHING_TO_STASH",
+    );
+  }
+  const stash = await stashWithFileCount(repository, created);
+  const remaining = await repositoryChanges(repositoryId);
+  return {
+    repositoryId,
+    stash,
+    changes: remaining.changes,
+    remainingFiles: new Set(remaining.changes.map((change) => change.path)).size,
+  };
+}
+
+async function restoreStash(repositoryId, stashId, mode) {
+  const repository = await getRepository(repositoryId);
+  const before = await repositoryChanges(repositoryId);
+  if (before.changes.some((change) => change.scope === "conflict")) {
+    throw new GitServiceError(
+      "Resolve existing conflicts before restoring a stash.",
+      409,
+      "UNRESOLVED_CONFLICTS",
+    );
+  }
+  const stash = await resolveCurrentStash(repository, stashId);
+  try {
+    await spawnGit(
+      repository.path,
+      ["stash", "apply", "--index", stash.id],
+      { timeout: STASH_TIMEOUT_MS },
+    );
+  } catch (error) {
+    const current = await repositoryChanges(repositoryId);
+    if (current.changes.some((change) => change.scope === "conflict")) {
+      const retained = (await stashMetadata(repository)).some(
+        (candidate) => candidate.id === stash.id,
+      );
+      return {
+        repositoryId,
+        outcome: "conflicts",
+        stashRetained: retained,
+        changes: current.changes,
+      };
+    }
+    throw error;
+  }
+  if (mode === "pop") {
+    const current = (await stashMetadata(repository)).find(
+      (candidate) => candidate.id === stash.id,
+    );
+    if (current) {
+      try {
+        const resolved = (
+          await execGit(repository.path, ["rev-parse", current.ref])
+        ).trim();
+        if (resolved !== stash.id) {
+          throw new GitServiceError(
+            "The stash list changed while the operation was running. The changes were restored, but the stash was kept.",
+            409,
+            "STALE_STASH",
+          );
+        }
+        await execGit(
+          repository.path,
+          ["stash", "drop", "--quiet", current.ref],
+          { timeout: STASH_TIMEOUT_MS },
+        );
+      } catch {
+        // The work was restored successfully; retain the stash if it cannot
+        // be removed safely after a concurrent reflog change.
+      }
+    }
+  }
+  const current = await repositoryChanges(repositoryId);
+  const retained = (await stashMetadata(repository)).some(
+    (candidate) => candidate.id === stash.id,
+  );
+  return {
+    repositoryId,
+    outcome: "applied",
+    stashRetained: retained,
+    changes: current.changes,
+  };
+}
+
+export async function applyStash(repositoryId, stashId) {
+  return restoreStash(repositoryId, stashId, "apply");
+}
+
+export async function popStash(repositoryId, stashId) {
+  return restoreStash(repositoryId, stashId, "pop");
+}
+
+export async function dropStash(repositoryId, stashId) {
+  const repository = await getRepository(repositoryId);
+  const stash = await resolveCurrentStash(repository, stashId);
+  const resolved = (
+    await execGit(repository.path, ["rev-parse", stash.ref])
+  ).trim();
+  if (resolved !== stash.id) {
+    throw new GitServiceError(
+      "The stash list changed while the operation was running. Refresh and try again.",
+      409,
+      "STALE_STASH",
+    );
+  }
+  await execGit(repository.path, ["stash", "drop", "--quiet", stash.ref], {
+    timeout: STASH_TIMEOUT_MS,
+  });
+  return {
+    repositoryId,
+    stashId,
+    dropped: true,
+  };
+}
+
 export async function commitDetails(repositoryId, sha) {
   if (!/^[0-9a-f]{7,40}$/i.test(sha)) {
     throw new GitServiceError("Commit not found.", 404, "COMMIT_NOT_FOUND");
@@ -1336,6 +1621,44 @@ export async function comparisonContents(repositoryId, options) {
   } else if (options.scope === "conflict") {
     original = await readGitObject(repository.path, `:1:${filePath}`, "base", "Merge base");
     modified = await readWorkingFile(repository.path, filePath, "Working tree · unresolved");
+  } else if (options.scope === "stash") {
+    const stash = await resolveCurrentStash(repository, options.stash);
+    const files = await filesInStash(repository, stash);
+    const stashedFile = files.find(
+      (file) =>
+        file.path === filePath &&
+        (file.previousPath ?? filePath) === previousPath,
+    );
+    if (!stashedFile) {
+      throw new GitServiceError(
+        "This file is no longer available in the selected stash.",
+        409,
+        "STALE_STASH_FILE",
+      );
+    }
+    const untracked = await readGitObject(
+      repository.path,
+      `${stash.id}^3:${filePath}`,
+      "stash",
+      stash.ref,
+    );
+    if (!untracked.missing) {
+      original = textPayload(null, "empty", "New file");
+      modified = untracked;
+    } else {
+      original = await readGitObject(
+        repository.path,
+        `${stash.id}^1:${previousPath}`,
+        "base",
+        "Stash base",
+      );
+      modified = await readGitObject(
+        repository.path,
+        `${stash.id}:${filePath}`,
+        "stash",
+        stash.ref,
+      );
+    }
   } else if (options.scope === "commit") {
     if (!/^[0-9a-f]{7,40}$/i.test(options.commit || "")) {
       throw new GitServiceError("Commit not found.", 404, "COMMIT_NOT_FOUND");

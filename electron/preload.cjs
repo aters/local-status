@@ -34,6 +34,18 @@ contextBridge.exposeInMainWorld("localStatus", {
       invoke("repositories:unstage", { repositoryId, selection }),
     revert: (repositoryId, selection) =>
       invoke("repositories:revert", { repositoryId, selection }),
+    stashes: (repositoryId) =>
+      invoke("repositories:stashes", { repositoryId }),
+    stash: (repositoryId, stashId) =>
+      invoke("repositories:stash", { repositoryId, stashId }),
+    createStash: (repositoryId, input) =>
+      invoke("repositories:create-stash", { repositoryId, input }),
+    applyStash: (repositoryId, stashId) =>
+      invoke("repositories:apply-stash", { repositoryId, stashId }),
+    popStash: (repositoryId, stashId) =>
+      invoke("repositories:pop-stash", { repositoryId, stashId }),
+    dropStash: (repositoryId, stashId) =>
+      invoke("repositories:drop-stash", { repositoryId, stashId }),
     sync: (repositoryId) => invoke("repositories:sync", { repositoryId }),
     scripts: (repositoryId) => invoke("repositories:scripts", { repositoryId }),
     setFavourite: (groupId, favourite) =>
@@ -44,10 +56,6 @@ contextBridge.exposeInMainWorld("localStatus", {
       invoke("repositories:branches", { repositoryId }),
     switchBranch: (repositoryId, targetRef) =>
       invoke("repositories:switch-branch", { repositoryId, targetRef }),
-    stashes: (repositoryId) =>
-      invoke("repositories:stashes", { repositoryId }),
-    stashAction: (repositoryId, stashRef, mode) =>
-      invoke("repositories:stash-action", { repositoryId, stashRef, mode }),
   },
   pullRequests: {
     list: () => invoke("pull-requests:list"),

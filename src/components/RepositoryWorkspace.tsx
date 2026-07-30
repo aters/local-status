@@ -29,6 +29,7 @@ import {
   Star,
   SquareTerminal,
   Play,
+  Trash2,
   Undo2,
   X,
 } from "lucide-react";
@@ -41,6 +42,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { createPortal } from "react-dom";
@@ -63,10 +65,11 @@ import type {
   RepositoriesResponse,
   RepositoryBranch,
   RepositoryBranches,
-  RepositoryStash,
   RepositorySummary,
   RepositoryTab,
   RepositoryScript,
+  StashDetails,
+  StashSummary,
   TerminalKind,
   TerminalSession,
   Theme,
@@ -76,6 +79,7 @@ import { AiTerminalModal } from "./AiTerminalModal";
 import { CommitModal } from "./CommitModal";
 import { FileTree } from "./FileTree";
 import { RepositoryMark } from "./RepositoryMark";
+import { StashModal } from "./StashModal";
 import { repositoryHealth } from "../repository-mark";
 
 const MonacoDiff = lazy(() => import("./MonacoDiff"));
@@ -87,7 +91,7 @@ type RepoFilter =
   | "incoming"
   | "outgoing"
   | "errors";
-type WorkingChangeScope = Exclude<ChangeScope, "commit">;
+type WorkingChangeScope = Exclude<ChangeScope, "commit" | "stash">;
 type ChangeGroupKey = "conflict" | "staged" | "unstaged";
 
 interface CompareRequest {
@@ -95,6 +99,17 @@ interface CompareRequest {
   previousPath?: string | null;
   scope: ChangeScope;
   commit?: string | null;
+  stash?: string | null;
+}
+
+interface WorkspaceToast {
+  message: string;
+  tone: "success" | "error";
+  durationMs: number;
+  action?: {
+    label: string;
+    run: () => void;
+  };
 }
 
 function getParams() {
@@ -103,10 +118,35 @@ function getParams() {
 
 function readableError(caught: unknown, fallback: string) {
   if (!(caught instanceof Error)) return fallback;
-  return caught.message.replace(
-    /^Error invoking remote method '[^']+': Error:\s*/i,
-    "",
-  );
+  return caught.message
+    .replace(/^Error invoking remote method '[^']+':\s*/i, "")
+    .replace(/^(?:(?:[A-Za-z_$][\w$]*)?Error):\s*/i, "");
+}
+
+function readableSyncError(caught: unknown) {
+  const detail = readableError(caught, "Sync failed. Try again.");
+
+  if (/local changes .*overwritten by merge/i.test(detail)) {
+    return "Sync stopped to protect your local changes. Commit, revert, or stash the affected files, then try Sync again.";
+  }
+
+  if (/untracked working tree files .*overwritten by merge/i.test(detail)) {
+    return "Sync stopped because incoming files would overwrite untracked files. Commit, move, or remove those files, then try Sync again.";
+  }
+
+  if (/not possible to fast-forward/i.test(detail)) {
+    return "Sync needs a linear history, but the local and remote commits have diverged. Rebase or merge them in a terminal, then try Sync again.";
+  }
+
+  return detail.replace(/^error:\s*/i, "");
+}
+
+function changeActionKey(
+  action: ChangeAction,
+  selection: ChangeSelection,
+) {
+  const target = selection.paths?.join("\0") ?? selection.path ?? "*";
+  return `${action}:${selection.scope}:${target}`;
 }
 
 function initialTab(): RepositoryTab {
@@ -123,10 +163,14 @@ function initialCompare(): CompareRequest | null {
   return {
     path,
     scope:
-      scope && ["staged", "working", "untracked", "conflict", "commit"].includes(scope)
+      scope &&
+      ["staged", "working", "untracked", "conflict", "commit", "stash"].includes(
+        scope,
+      )
         ? scope
         : "working",
     commit: getParams().get("commit"),
+    stash: getParams().get("stash"),
   };
 }
 
@@ -679,6 +723,7 @@ function ChangeList({
   disabled,
   onSelect,
   onAction,
+  onStash,
 }: {
   changes: ChangeItem[];
   selected: CompareRequest | null;
@@ -687,13 +732,60 @@ function ChangeList({
   disabled: boolean;
   onSelect: (change: ChangeItem) => void;
   onAction: (action: ChangeAction, selection: ChangeSelection) => void;
+  onStash: (path: string) => void;
 }) {
   const [collapsed, setCollapsed] = useState<Set<ChangeGroupKey>>(
     () => new Set(),
   );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const selectionAnchor = useRef<{
+    group: ChangeGroupKey;
+    id: string;
+  } | null>(null);
+  const shiftPressed = useRef(false);
   const filtered = changes.filter((change) =>
     change.path.toLowerCase().includes(search.toLowerCase()),
   );
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Shift") shiftPressed.current = true;
+    }
+
+    function handleKeyUp(event: KeyboardEvent) {
+      if (event.key === "Shift") shiftPressed.current = false;
+    }
+
+    function handleBlur() {
+      shiftPressed.current = false;
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleBlur);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, []);
+
+  useEffect(() => {
+    const available = new Set(changes.map((change) => change.id));
+    setSelectedIds((current) => {
+      const next = new Set([...current].filter((id) => available.has(id)));
+      return next.size === current.size ? current : next;
+    });
+    if (
+      selectionAnchor.current &&
+      !available.has(selectionAnchor.current.id)
+    ) {
+      selectionAnchor.current = null;
+    }
+  }, [changes]);
+
   if (!filtered.length) {
     return (
       <div className="panel-empty panel-empty--large">
@@ -710,13 +802,16 @@ function ChangeList({
 
   function actionButton(
     action: ChangeAction,
-    scope: ChangeActionScope,
-    path?: string,
+    selection: ChangeSelection,
   ) {
-    const key = `${action}:${scope}:${path ?? "*"}`;
-    const label = path
-      ? `${action === "stage" ? "Stage" : action === "unstage" ? "Unstage" : "Revert"} ${path}`
-      : `${action === "stage" ? "Stage" : action === "unstage" ? "Unstage" : "Revert"} all ${scope} changes`;
+    const key = changeActionKey(action, selection);
+    const verb =
+      action === "stage" ? "Stage" : action === "unstage" ? "Unstage" : "Revert";
+    const label = selection.paths?.length
+      ? `${verb} ${selection.paths.length} selected files`
+      : selection.path
+        ? `${verb} ${selection.path}`
+        : `${verb} all ${selection.scope} changes`;
     const Icon = action === "stage" ? Plus : action === "unstage" ? Minus : Undo2;
     return (
       <button
@@ -725,21 +820,66 @@ function ChangeList({
         title={label}
         aria-label={label}
         disabled={Boolean(busy) || disabled}
-        onClick={() => onAction(action, { scope, path })}
+        onClick={() => onAction(action, selection)}
       >
         {busy === key ? <RefreshCw className="is-spinning" size={12} /> : <Icon size={13} />}
       </button>
     );
   }
 
-  function actionsFor(scope: WorkingChangeScope, path?: string) {
+  function stashButton(path: string) {
+    const label = `Stash all changes for ${path}`;
+    return (
+      <button
+        type="button"
+        className="change-action"
+        title={label}
+        aria-label={label}
+        disabled={Boolean(busy) || disabled}
+        onClick={() => onStash(path)}
+      >
+        <Archive size={12} />
+      </button>
+    );
+  }
+
+  function selectionForRow(
+    group: (typeof scopeGroups)[number],
+    items: ChangeItem[],
+    change: ChangeItem,
+  ): ChangeSelection {
+    if (!selectedIds.has(change.id)) {
+      return { scope: change.scope as ChangeActionScope, path: change.path };
+    }
+    const selectedItems = items.filter((item) => selectedIds.has(item.id));
+    if (selectedItems.length < 2) {
+      return { scope: change.scope as ChangeActionScope, path: change.path };
+    }
+    const scopes = new Set(selectedItems.map((item) => item.scope));
+    return {
+      scope:
+        scopes.size === 1
+          ? (selectedItems[0].scope as ChangeActionScope)
+          : group.actionScope,
+      paths: [...new Set(selectedItems.map((item) => item.path))],
+    };
+  }
+
+  function actionsFor(
+    group: (typeof scopeGroups)[number],
+    items: ChangeItem[],
+    change: ChangeItem,
+  ) {
+    const selection = selectionForRow(group, items, change);
+    const scope = change.scope as WorkingChangeScope;
     return (
       <span className="change-actions">
+        {scope !== "conflict" && stashButton(change.path)}
         {(scope === "working" || scope === "untracked") &&
-          actionButton("revert", scope, path)}
+          actionButton("revert", selection)}
         {scope === "staged"
-          ? actionButton("unstage", scope, path)
-          : actionButton("stage", scope, path)}
+          ? actionButton("unstage", selection)
+          : actionButton("stage", selection)}
       </span>
     );
   }
@@ -747,12 +887,52 @@ function ChangeList({
   function actionsForGroup(group: (typeof scopeGroups)[number]) {
     return (
       <span className="change-actions">
-        {group.key === "unstaged" && actionButton("revert", group.actionScope)}
+        {group.key === "unstaged" &&
+          actionButton("revert", { scope: group.actionScope })}
         {group.key === "staged"
-          ? actionButton("unstage", group.actionScope)
-          : actionButton("stage", group.actionScope)}
+          ? actionButton("unstage", { scope: group.actionScope })
+          : actionButton("stage", { scope: group.actionScope })}
       </span>
     );
+  }
+
+  function selectChange(
+    event: ReactMouseEvent<HTMLButtonElement>,
+    group: (typeof scopeGroups)[number],
+    items: ChangeItem[],
+    change: ChangeItem,
+  ) {
+    const routeAnchor = items.find(
+      (item) =>
+        selected?.path === item.path && selected.scope === item.scope,
+    );
+    const storedAnchor =
+      selectionAnchor.current?.group === group.key &&
+      items.some((item) => item.id === selectionAnchor.current?.id)
+        ? selectionAnchor.current.id
+        : undefined;
+    const anchorId =
+      storedAnchor ?? routeAnchor?.id;
+    if ((event.shiftKey || shiftPressed.current) && anchorId) {
+      const anchorIndex = items.findIndex(
+        (item) => item.id === anchorId,
+      );
+      const clickedIndex = items.findIndex((item) => item.id === change.id);
+      if (anchorIndex >= 0 && clickedIndex >= 0) {
+        const start = Math.min(anchorIndex, clickedIndex);
+        const end = Math.max(anchorIndex, clickedIndex);
+        setSelectedIds(
+          new Set(items.slice(start, end + 1).map((item) => item.id)),
+        );
+      } else {
+        setSelectedIds(new Set([change.id]));
+        selectionAnchor.current = { group: group.key, id: change.id };
+      }
+    } else {
+      setSelectedIds(new Set([change.id]));
+      selectionAnchor.current = { group: group.key, id: change.id };
+    }
+    onSelect(change);
   }
 
   return (
@@ -794,7 +974,10 @@ function ChangeList({
                 {items.map((change) => (
                   <div
                   className={`change-row ${
-                    selected?.path === change.path && selected.scope === change.scope
+                    selectedIds.has(change.id) ||
+                    (selectedIds.size === 0 &&
+                      selected?.path === change.path &&
+                      selected.scope === change.scope)
                       ? "is-selected"
                       : ""
                   }`}
@@ -803,7 +986,10 @@ function ChangeList({
                     <button
                       type="button"
                       className="change-row__select"
-                      onClick={() => onSelect(change)}
+                      aria-pressed={selectedIds.has(change.id)}
+                      onClick={(event) =>
+                        selectChange(event, group, items, change)
+                      }
                       title={change.path}
                     >
                       <span className={`change-kind change-kind--${change.kind}`}>
@@ -814,11 +1000,11 @@ function ChangeList({
                         <small>
                           {change.previousPath
                             ? `${change.previousPath} → ${pathDirectory(change.path)}`
-                            : pathDirectory(change.path) || "repository root"}
+                            : pathDirectory(change.path) || "./"}
                         </small>
                       </span>
                     </button>
-                    {actionsFor(change.scope as WorkingChangeScope, change.path)}
+                    {actionsFor(group, items, change)}
                   </div>
               ))}
               </div>
@@ -992,53 +1178,57 @@ function BranchPicker({
 
 function StashList({
   stashes,
-  busy,
-  onAction,
+  selectedId,
+  search,
+  onSelect,
 }: {
-  stashes: RepositoryStash[];
-  busy: string | null;
-  onAction: (stash: RepositoryStash, mode: "apply" | "pop") => void;
+  stashes: StashSummary[];
+  selectedId: string | null;
+  search: string;
+  onSelect: (stash: StashSummary) => void;
 }) {
-  if (!stashes.length) {
+  const normalizedSearch = search.trim().toLowerCase();
+  const filtered = stashes.filter((stash) =>
+    [stash.message, stash.branch ?? "", stash.ref, stash.id].some((value) =>
+      value.toLowerCase().includes(normalizedSearch),
+    ),
+  );
+  if (!filtered.length) {
     return (
       <div className="panel-empty panel-empty--large">
         <Archive size={24} />
-        <strong>No stashed changes</strong>
-        <span>Stashes created during branch switching will appear here.</span>
+        <strong>{normalizedSearch ? "No matching stashes" : "No saved stashes"}</strong>
+        <span>
+          {normalizedSearch
+            ? "Try another message, branch, or reference."
+            : "Stashed work for this repository will appear here."}
+        </span>
       </div>
     );
   }
   return (
     <div className="stash-list">
-      {stashes.map((stash) => (
-        <article className="stash-row" key={stash.ref}>
-          <div>
-            <code>{stash.ref}</code>
+      {filtered.map((stash) => (
+        <button
+          type="button"
+          className={`stash-row ${stash.id === selectedId ? "is-selected" : ""}`}
+          key={stash.id}
+          onClick={() => onSelect(stash)}
+        >
+          <span className="stash-row__icon">
+            <Archive size={14} />
+          </span>
+          <span className="stash-row__content">
             <strong>{stash.message}</strong>
             <span>
-              {stash.branch ? `${stash.branch} · ` : ""}
-              {relativeTime(stash.createdAt)}
+              {stash.branch || "Detached HEAD"} · {relativeTime(stash.createdAt)}
             </span>
-          </div>
-          <div>
-            <button
-              className="secondary-button"
-              type="button"
-              disabled={busy !== null}
-              onClick={() => onAction(stash, "apply")}
-            >
-              Apply
-            </button>
-            <button
-              className="primary-button"
-              type="button"
-              disabled={busy !== null}
-              onClick={() => onAction(stash, "pop")}
-            >
-              Pop
-            </button>
-          </div>
-        </article>
+            <code>
+              {stash.ref} · {stash.fileCount}{" "}
+              {stash.fileCount === 1 ? "file" : "files"}
+            </code>
+          </span>
+        </button>
       ))}
     </div>
   );
@@ -1121,8 +1311,8 @@ export function RepositoryWorkspace({
   const [commitScope, setCommitScope] = useState<CommitScope>("local");
   const [changes, setChanges] = useState<ChangeItem[]>([]);
   const [commits, setCommits] = useState<Commit[]>([]);
+  const [stashes, setStashes] = useState<StashSummary[]>([]);
   const [files, setFiles] = useState<string[]>([]);
-  const [stashes, setStashes] = useState<RepositoryStash[]>([]);
   const [contextLoading, setContextLoading] = useState(false);
   const [contextError, setContextError] = useState<string | null>(null);
   const [contextSearch, setContextSearch] = useState("");
@@ -1140,10 +1330,20 @@ export function RepositoryWorkspace({
     commit: Commit;
     files: FileChange[];
   } | null>(null);
+  const [selectedStash, setSelectedStash] = useState<string | null>(
+    () => params.get("stash"),
+  );
+  const [stashDetail, setStashDetail] = useState<StashDetails | null>(null);
+  const [stashModalPath, setStashModalPath] = useState<
+    string | null | undefined
+  >(undefined);
+  const [stashMessage, setStashMessage] = useState("");
+  const [stashIncludeUntracked, setStashIncludeUntracked] = useState(true);
+  const [stashError, setStashError] = useState<string | null>(null);
+  const [stashBusy, setStashBusy] = useState<string | null>(null);
   const [fetching, setFetching] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [changeBusy, setChangeBusy] = useState<string | null>(null);
-  const [stashBusy, setStashBusy] = useState<string | null>(null);
   const [viewerExpanded, setViewerExpanded] = useState(false);
   const [branchMenu, setBranchMenu] = useState<{
     repositoryId: string;
@@ -1166,7 +1366,7 @@ export function RepositoryWorkspace({
     provider: AiProvider;
     action: AiTerminalAction;
   } | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<WorkspaceToast | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [runMenuOpen, setRunMenuOpen] = useState(false);
   const [repositoryScripts, setRepositoryScripts] = useState<RepositoryScript[]>([]);
@@ -1191,6 +1391,22 @@ export function RepositoryWorkspace({
 
   const selectedRepository =
     activeRepositories.find((repository) => repository.id === selectedId) ?? null;
+
+  function showToast(
+    message: string,
+    options: {
+      tone?: WorkspaceToast["tone"];
+      durationMs?: number;
+      action?: WorkspaceToast["action"];
+    } = {},
+  ) {
+    setToast({
+      message,
+      tone: options.tone ?? "success",
+      durationMs: options.durationMs ?? TOAST_DURATION_MS,
+      action: options.action,
+    });
+  }
 
   useEffect(() => {
     if (!activeRepositories.length) {
@@ -1220,20 +1436,22 @@ export function RepositoryWorkspace({
     if (compareRequest) {
       updates.file = compareRequest.path;
       updates.scope = compareRequest.scope;
-      updates.commit = compareRequest.commit;
+      updates.commit = compareRequest.commit ?? null;
+      updates.stash = compareRequest.stash ?? null;
     } else {
       updates.file = null;
       updates.scope = null;
-      updates.commit = selectedCommit;
+      updates.commit = tab === "commits" ? selectedCommit : null;
+      updates.stash = tab === "stashes" ? selectedStash : null;
     }
     updateRoute(updates);
-  }, [compareRequest, selectedCommit, selectedId, tab]);
+  }, [compareRequest, selectedCommit, selectedId, selectedStash, tab]);
 
   useEffect(() => {
     if (!toast) return;
     const timeout = window.setTimeout(() => {
       setToast((current) => (current === toast ? null : current));
-    }, TOAST_DURATION_MS);
+    }, toast.durationMs);
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
@@ -1243,6 +1461,7 @@ export function RepositoryWorkspace({
     setTab("files");
     setCommitScope("local");
     setSelectedCommit(null);
+    setSelectedStash(null);
     setCompareRequest({ path: openFileRequest.path, scope: "working" });
     setContextSearch("");
     setRunMenuOpen(false);
@@ -1344,9 +1563,9 @@ export function RepositoryWorkspace({
         ? api.changes(selectedId)
         : tab === "commits"
           ? api.commits(selectedId, commitScope)
-          : tab === "files"
-            ? api.files(selectedId)
-            : api.stashes(selectedId);
+          : tab === "stashes"
+            ? api.stashes(selectedId)
+            : api.files(selectedId);
     void load
       .then((response) => {
         if (cancelled) return;
@@ -1371,10 +1590,17 @@ export function RepositoryWorkspace({
             setSelectedCommit(response.commits[0]?.sha ?? null);
             setCompareRequest(null);
           }
-        } else if ("files" in response) {
-          setFiles(response.files);
-        } else {
+        } else if ("stashes" in response) {
           setStashes(response.stashes);
+          if (
+            !selectedStash ||
+            !response.stashes.some((stash) => stash.id === selectedStash)
+          ) {
+            setSelectedStash(response.stashes[0]?.id ?? null);
+            setCompareRequest(null);
+          }
+        } else {
+          setFiles(response.files);
         }
       })
       .catch((caught) => {
@@ -1414,6 +1640,31 @@ export function RepositoryWorkspace({
   }, [selectedCommit, selectedId, tab]);
 
   useEffect(() => {
+    if (!selectedId || !selectedStash || tab !== "stashes") {
+      setStashDetail(null);
+      return;
+    }
+    let cancelled = false;
+    setViewerError(null);
+    void api
+      .stash(selectedId, selectedStash)
+      .then((detail) => {
+        if (!cancelled) setStashDetail(detail);
+      })
+      .catch((caught) => {
+        if (!cancelled) {
+          setStashDetail(null);
+          setViewerError(
+            readableError(caught, "Could not load the selected stash."),
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, selectedStash, tab, data?.generatedAt]);
+
+  useEffect(() => {
     if (!selectedId || !compareRequest) {
       comparisonRequestKey.current = null;
       setComparison(null);
@@ -1426,6 +1677,7 @@ export function RepositoryWorkspace({
       compareRequest.path,
       compareRequest.previousPath,
       compareRequest.commit,
+      compareRequest.stash,
     ].join(":");
     const changedSelection = comparisonRequestKey.current !== requestKey;
     comparisonRequestKey.current = requestKey;
@@ -1468,6 +1720,7 @@ export function RepositoryWorkspace({
     setTab("changes");
     setCommitScope("local");
     setSelectedCommit(null);
+    setSelectedStash(null);
     setCompareRequest(null);
     setContextSearch("");
     setRunMenuOpen(false);
@@ -1491,8 +1744,9 @@ export function RepositoryWorkspace({
     try {
       setBranches(await api.branches(repositoryId));
     } catch (caught) {
-      setToast(
+      showToast(
         caught instanceof Error ? caught.message : "Could not load branches.",
+        { tone: "error" },
       );
       setBranchMenu(null);
     } finally {
@@ -1516,15 +1770,16 @@ export function RepositoryWorkspace({
       setContextSearch("");
       contextRequestKey.current = null;
       comparisonRequestKey.current = null;
-      setToast(
+      showToast(
         result.stashed
           ? `Switched to ${branch.name}. Changes are safe in ${result.stashed.ref}.`
           : `Switched to ${branch.name}.`,
       );
       await onRefresh();
     } catch (caught) {
-      setToast(
+      showToast(
         caught instanceof Error ? caught.message : "Could not switch branches.",
+        { tone: "error" },
       );
       await onRefresh();
     } finally {
@@ -1562,10 +1817,11 @@ export function RepositoryWorkspace({
         "local-status:favourite-repository-groups",
         JSON.stringify(restored),
       );
-      setToast(
+      showToast(
         caught instanceof Error
           ? caught.message
           : "Could not update favourites.",
+        { tone: "error" },
       );
     } finally {
       setChangeBusy(null);
@@ -1592,7 +1848,7 @@ export function RepositoryWorkspace({
     }
     try {
       await api.setArchived(groupId, archived);
-      setToast(
+      showToast(
         archived
           ? "Repository archived. It will be skipped by Git refresh and fetch operations."
           : "Repository restored.",
@@ -1603,49 +1859,16 @@ export function RepositoryWorkspace({
       if (previous === undefined) delete restored[groupId];
       else restored[groupId] = previous;
       setArchivedOverrides(restored);
-      setToast(
+      showToast(
         caught instanceof Error
           ? caught.message
           : archived
             ? "Could not archive the repository."
             : "Could not restore the repository.",
+        { tone: "error" },
       );
     } finally {
       setChangeBusy(null);
-    }
-  }
-
-  async function performStashAction(
-    stash: RepositoryStash,
-    mode: "apply" | "pop",
-  ) {
-    if (!selectedId) return;
-    setStashBusy(`${mode}:${stash.ref}`);
-    setToast(null);
-    try {
-      const result = await api.stashAction(selectedId, stash.ref, mode);
-      setStashes(result.stashes);
-      setChanges(result.changes);
-      setToast(
-        mode === "apply"
-          ? `Applied ${stash.ref}.`
-          : `Popped ${stash.ref}.`,
-      );
-      await onRefresh();
-    } catch (caught) {
-      setToast(
-        caught instanceof Error
-          ? caught.message
-          : `Could not ${mode} ${stash.ref}.`,
-      );
-      try {
-        setStashes((await api.stashes(selectedId)).stashes);
-      } catch {
-        // Preserve the actionable Git error if the refresh also fails.
-      }
-      await onRefresh();
-    } finally {
-      setStashBusy(null);
     }
   }
 
@@ -1691,6 +1914,7 @@ export function RepositoryWorkspace({
     setTab(nextTab);
     setCompareRequest(null);
     setSelectedCommit(null);
+    setSelectedStash(null);
     setContextSearch("");
   }
 
@@ -1699,10 +1923,12 @@ export function RepositoryWorkspace({
     setToast(null);
     try {
       const result = await api.fetch(repositoryId);
-      setToast(`Fetched ${result.remote} for ${repositoryId}.`);
+      showToast(`Fetched ${result.remote} for ${repositoryId}.`);
       await onRefresh();
     } catch (caught) {
-      setToast(caught instanceof Error ? caught.message : "Fetch failed.");
+      showToast(caught instanceof Error ? caught.message : "Fetch failed.", {
+        tone: "error",
+      });
     } finally {
       setFetching(null);
     }
@@ -1714,14 +1940,17 @@ export function RepositoryWorkspace({
     try {
       const result = await api.fetchAll();
       const failures = result.results.filter((entry) => !entry.ok);
-      setToast(
+      showToast(
         failures.length
           ? `Fetched ${result.results.length - failures.length} repositories; ${failures.length} need attention.`
           : `Fetched all ${result.results.length} repositories.`,
+        failures.length ? { tone: "error" } : undefined,
       );
       await onRefresh();
     } catch (caught) {
-      setToast(caught instanceof Error ? caught.message : "Fetch all failed.");
+      showToast(caught instanceof Error ? caught.message : "Fetch all failed.", {
+        tone: "error",
+      });
     } finally {
       setFetching(null);
     }
@@ -1732,7 +1961,7 @@ export function RepositoryWorkspace({
     selection: ChangeSelection,
   ) {
     if (!selectedId) return;
-    const key = `${action}:${selection.scope}:${selection.path ?? "*"}`;
+    const key = changeActionKey(action, selection);
     setChangeBusy(key);
     setToast(null);
     try {
@@ -1750,7 +1979,11 @@ export function RepositoryWorkspace({
           (selection.scope === "unstaged" &&
             (compareRequest.scope === "working" ||
               compareRequest.scope === "untracked"))) &&
-        (!selection.path || compareRequest.path === selection.path)
+        (!selection.path && !selection.paths
+          ? true
+          : selection.path
+            ? compareRequest.path === selection.path
+            : selection.paths?.includes(compareRequest.path))
       ) {
         const next = result.changes.find(
           (change) => change.path === compareRequest.path,
@@ -1765,12 +1998,14 @@ export function RepositoryWorkspace({
             : null,
         );
       }
-      const target = selection.path
-        ? pathName(selection.path)
+      const target = selection.paths?.length
+        ? `${selection.paths.length} selected files`
+        : selection.path
+          ? pathName(selection.path)
         : selection.scope === "unstaged"
           ? "all unstaged changes"
           : `${selection.scope} changes`;
-      setToast(
+      showToast(
         action === "stage"
           ? `Staged ${target}.`
           : action === "unstage"
@@ -1779,12 +2014,152 @@ export function RepositoryWorkspace({
       );
       await onRefresh();
     } catch (caught) {
-      setToast(
+      showToast(
         caught instanceof Error ? caught.message : `Could not ${action} the changes.`,
+        { tone: "error" },
       );
       await onRefresh();
     } finally {
       setChangeBusy(null);
+    }
+  }
+
+  function openStashModal(path: string | null = null) {
+    setStashModalPath(path);
+    setStashMessage("");
+    setStashIncludeUntracked(true);
+    setStashError(null);
+  }
+
+  async function refreshStashes(repositoryId: string) {
+    const response = await api.stashes(repositoryId);
+    setStashes(response.stashes);
+    return response.stashes;
+  }
+
+  async function createSelectedStash() {
+    if (!selectedId || stashModalPath === undefined) return;
+    setStashBusy("create");
+    setStashError(null);
+    try {
+      const result = await api.createStash(selectedId, {
+        message: stashMessage,
+        includeUntracked: stashIncludeUntracked,
+        path: stashModalPath,
+      });
+      setChanges(result.changes);
+      setStashes((current) => [
+        result.stash,
+        ...current.filter((stash) => stash.id !== result.stash.id),
+      ]);
+      setStashModalPath(undefined);
+      setStashMessage("");
+      showToast(
+        result.remainingFiles
+          ? `Created ${result.stash.ref}; ${result.remainingFiles} changed ${
+              result.remainingFiles === 1 ? "file remains" : "files remain"
+            }.`
+          : `Created ${result.stash.ref} with ${result.stash.fileCount} ${
+              result.stash.fileCount === 1 ? "file" : "files"
+            }.`,
+        {
+          durationMs: 8_000,
+          action: {
+            label: "View stash",
+            run: () => {
+              setTab("stashes");
+              setSelectedCommit(null);
+              setSelectedStash(result.stash.id);
+              setCompareRequest(null);
+              setToast(null);
+            },
+          },
+        },
+      );
+      if (
+        compareRequest &&
+        !result.changes.some((change) => change.path === compareRequest.path)
+      ) {
+        setCompareRequest(null);
+      }
+      await onRefresh();
+    } catch (caught) {
+      setStashError(readableError(caught, "Could not create the stash."));
+    } finally {
+      setStashBusy(null);
+    }
+  }
+
+  async function restoreSelectedStash(
+    action: "apply" | "pop",
+    stash: StashSummary,
+  ) {
+    if (!selectedId) return;
+    setStashBusy(`${action}:${stash.id}`);
+    setToast(null);
+    try {
+      const result =
+        action === "apply"
+          ? await api.applyStash(selectedId, stash.id)
+          : await api.popStash(selectedId, stash.id);
+      if (result.outcome === "cancelled") return;
+      setChanges(result.changes);
+      if (result.outcome === "conflicts") {
+        setTab("changes");
+        setSelectedStash(null);
+        setCompareRequest(null);
+        showToast(
+          "The stash was kept because restoring it created conflicts. Resolve them in Changes before trying again.",
+          { tone: "error", durationMs: 10_000 },
+        );
+      } else {
+        const nextStashes = await refreshStashes(selectedId);
+        if (action === "pop") {
+          setSelectedStash(nextStashes[0]?.id ?? null);
+          setStashDetail(null);
+          setCompareRequest(null);
+        }
+        showToast(
+          action === "apply"
+            ? `Applied ${stash.ref}; the stash is still available.`
+            : result.stashRetained
+              ? `Restored ${stash.ref}, but it was kept because the stash list changed.`
+              : `Popped ${stash.ref}.`,
+          result.stashRetained && action === "pop"
+            ? { tone: "error", durationMs: 8_000 }
+            : undefined,
+        );
+      }
+      await onRefresh();
+    } catch (caught) {
+      showToast(readableError(caught, `Could not ${action} the stash.`), {
+        tone: "error",
+        durationMs: 8_000,
+      });
+      await onRefresh();
+    } finally {
+      setStashBusy(null);
+    }
+  }
+
+  async function deleteSelectedStash(stash: StashSummary) {
+    if (!selectedId) return;
+    setStashBusy(`drop:${stash.id}`);
+    setToast(null);
+    try {
+      const result = await api.dropStash(selectedId, stash.id);
+      if (result.cancelled || !result.dropped) return;
+      const nextStashes = await refreshStashes(selectedId);
+      setSelectedStash(nextStashes[0]?.id ?? null);
+      setStashDetail(null);
+      setCompareRequest(null);
+      showToast(`Deleted ${stash.ref}.`);
+    } catch (caught) {
+      showToast(readableError(caught, "Could not delete the stash."), {
+        tone: "error",
+      });
+    } finally {
+      setStashBusy(null);
     }
   }
 
@@ -1797,13 +2172,29 @@ export function RepositoryWorkspace({
         result.pulled ? `pulled ${result.pulled}` : null,
         result.pushed ? `pushed ${result.pushed}` : null,
       ].filter(Boolean);
-      setToast(
+      showToast(
         activity.length
           ? `Synced ${repositoryId}: ${activity.join(", ")}.`
           : `${repositoryId} is already synchronized.`,
       );
     } catch (caught) {
-      setToast(caught instanceof Error ? caught.message : "Sync failed.");
+      const message = readableSyncError(caught);
+      showToast(message, {
+        tone: "error",
+        durationMs: 10_000,
+        action:
+          /^Sync stopped/.test(message) &&
+          changes.length &&
+          !changes.some((change) => change.scope === "conflict")
+            ? {
+                label: "Stash changes",
+                run: () => {
+                  openStashModal();
+                  setToast(null);
+                },
+              }
+            : undefined,
+      });
     } finally {
       await onRefresh();
       setSyncing(null);
@@ -1995,7 +2386,7 @@ export function RepositoryWorkspace({
         setCompareRequest(null);
       }
       setCommitModalOpen(false);
-      setToast(
+      showToast(
         `Committed ${result.commit.shortSha}: ${result.commit.subject}`,
       );
       await onRefresh();
@@ -2059,6 +2450,11 @@ export function RepositoryWorkspace({
     path.toLowerCase().includes(contextSearch.toLowerCase()),
   );
   const stagedCount = changes.filter((change) => change.scope === "staged").length;
+  const stashCounts = {
+    staged: stagedCount,
+    unstaged: changes.filter((change) => change.scope === "working").length,
+    untracked: changes.filter((change) => change.scope === "untracked").length,
+  };
   const hasConflicts = changes.some((change) => change.scope === "conflict");
   const commitDisabledReason = hasConflicts
     ? "Resolve conflicts before committing"
@@ -2128,7 +2524,7 @@ export function RepositoryWorkspace({
             className="primary-button"
             type="button"
             onClick={() => void fetchEveryRepository()}
-            disabled={Boolean(fetching || syncing || changeBusy)}
+            disabled={Boolean(fetching || syncing || changeBusy || stashBusy)}
           >
             <CloudDownload className={fetching === "all" ? "is-spinning" : ""} size={15} />
             {fetching === "all" ? "Fetching…" : "Fetch all"}
@@ -2137,11 +2533,33 @@ export function RepositoryWorkspace({
       </section>
 
       {(error || toast) && (
-        <div className={`workspace-toast ${error ? "is-error" : ""}`}>
-          {error ? <AlertTriangle size={15} /> : <Check size={15} />}
-          <span>{error || toast}</span>
+        <div
+          className={`workspace-toast ${
+            error || toast?.tone === "error" ? "is-error" : ""
+          }`}
+        >
+          {error || toast?.tone === "error" ? (
+            <AlertTriangle size={15} />
+          ) : (
+            <Check size={15} />
+          )}
+          <span>{error || toast?.message}</span>
+          {toast?.action && (
+            <button
+              className="workspace-toast__action"
+              type="button"
+              onClick={toast.action.run}
+            >
+              {toast.action.label}
+            </button>
+          )}
           {toast && (
-            <button type="button" onClick={() => setToast(null)} aria-label="Dismiss">
+            <button
+              className="workspace-toast__dismiss"
+              type="button"
+              onClick={() => setToast(null)}
+              aria-label="Dismiss"
+            >
               <X size={14} />
             </button>
           )}
@@ -2205,21 +2623,6 @@ export function RepositoryWorkspace({
                     <button
                       className="icon-button"
                       type="button"
-                      aria-label={`Archive ${selectedRepository.groupName || selectedRepository.id}`}
-                      data-tooltip="Archive repository"
-                      disabled={Boolean(fetching || syncing || changeBusy)}
-                      onClick={() =>
-                        void toggleArchived(
-                          repositoryGroupId(selectedRepository),
-                          true,
-                        )
-                      }
-                    >
-                      <Archive size={16} />
-                    </button>
-                    <button
-                      className="icon-button"
-                      type="button"
                       title="New terminal in this repository"
                       aria-label="New terminal in this repository"
                       onClick={() =>
@@ -2246,7 +2649,7 @@ export function RepositoryWorkspace({
                       type="button"
                       title="Fetch this repository"
                       aria-label="Fetch this repository"
-                      disabled={Boolean(fetching || syncing || changeBusy)}
+                      disabled={Boolean(fetching || syncing || changeBusy || stashBusy)}
                       onClick={() => void fetchRepository(selectedRepository.id)}
                     >
                       <CloudDownload
@@ -2265,7 +2668,7 @@ export function RepositoryWorkspace({
                       type="button"
                       title="Pull incoming changes, then push outgoing changes"
                       aria-label={`Sync changes: ${selectedRepository.incoming} incoming, ${selectedRepository.outgoing} outgoing`}
-                      disabled={Boolean(syncing || fetching || changeBusy)}
+                      disabled={Boolean(syncing || fetching || changeBusy || stashBusy)}
                       onClick={() => void syncSelectedRepository(selectedRepository.id)}
                     >
                       <RefreshCw
@@ -2329,8 +2732,8 @@ export function RepositoryWorkspace({
                   [
                     ["changes", GitCompareArrows, selectedRepository.summary.files],
                     ["commits", GitCommitHorizontal, null],
-                    ["files", Files, null],
                     ["stashes", Archive, stashes.length || null],
+                    ["files", Files, null],
                   ] as const
                 ).map(([value, Icon, count]) => (
                   <button
@@ -2356,6 +2759,30 @@ export function RepositoryWorkspace({
                       : "No staged changes"}
                   </span>
                   <button
+                    className="secondary-button"
+                    type="button"
+                    title={
+                      hasConflicts
+                        ? "Resolve conflicts before creating a stash"
+                        : changes.length
+                          ? "Stash all current changes"
+                          : "There are no changes to stash"
+                    }
+                    disabled={Boolean(
+                      !changes.length ||
+                        hasConflicts ||
+                        changeBusy ||
+                        stashBusy ||
+                        syncing ||
+                        fetching ||
+                        committing,
+                    )}
+                    onClick={() => openStashModal()}
+                  >
+                    <Archive size={13} />
+                    Stash
+                  </button>
+                  <button
                     className="primary-button"
                     type="button"
                     title={commitDisabledReason}
@@ -2363,6 +2790,7 @@ export function RepositoryWorkspace({
                       !stagedCount ||
                         hasConflicts ||
                         changeBusy ||
+                        stashBusy ||
                         syncing ||
                         fetching ||
                         committing,
@@ -2385,14 +2813,18 @@ export function RepositoryWorkspace({
                       ? "Filter changed files"
                       : tab === "commits"
                         ? "Filter commits"
-                        : "Filter files"
+                        : tab === "stashes"
+                          ? "Filter stashes"
+                          : "Filter files"
                   }
                   aria-label={
                     tab === "changes"
                       ? "Filter changed files"
                       : tab === "commits"
                         ? "Filter commits"
-                        : "Filter files"
+                        : tab === "stashes"
+                          ? "Filter stashes"
+                          : "Filter files"
                   }
                 />
               </label>
@@ -2435,11 +2867,12 @@ export function RepositoryWorkspace({
                   </div>
                 ) : tab === "changes" ? (
                   <ChangeList
+                    key={selectedId}
                     changes={changes}
                     selected={compareRequest}
                     search={contextSearch}
                     busy={changeBusy}
-                    disabled={Boolean(syncing || fetching)}
+                    disabled={Boolean(syncing || fetching || stashBusy)}
                     onSelect={(change) =>
                       setCompareRequest({
                         path: change.path,
@@ -2450,6 +2883,7 @@ export function RepositoryWorkspace({
                     onAction={(action, selection) =>
                       void performChangeAction(action, selection)
                     }
+                    onStash={(path) => openStashModal(path)}
                   />
                 ) : tab === "commits" ? (
                   <CommitList
@@ -2464,10 +2898,12 @@ export function RepositoryWorkspace({
                 ) : tab === "stashes" ? (
                   <StashList
                     stashes={stashes}
-                    busy={stashBusy}
-                    onAction={(stash, mode) =>
-                      void performStashAction(stash, mode)
-                    }
+                    selectedId={selectedStash}
+                    search={contextSearch}
+                    onSelect={(stash) => {
+                      setSelectedStash(stash.id);
+                      setCompareRequest(null);
+                    }}
                   />
                 ) : filteredFiles.length ? (
                   <FileTree
@@ -2499,7 +2935,9 @@ export function RepositoryWorkspace({
 
         <section
           className={`viewer-panel ${
-            (comparison && compareRequest) || (tab === "commits" && commitDetail)
+            (comparison && compareRequest) ||
+            (tab === "commits" && commitDetail) ||
+            (tab === "stashes" && stashDetail)
               ? "has-content"
               : ""
           }`}
@@ -2585,6 +3023,101 @@ export function RepositoryWorkspace({
                 />
               </Suspense>
             </>
+          ) : tab === "stashes" && stashDetail ? (
+            <div className="commit-detail stash-detail">
+              <div className="commit-detail__hero">
+                <button
+                  className="icon-button viewer-back-button mobile-only"
+                  type="button"
+                  aria-label="Back to stashes"
+                  title="Back to stashes"
+                  onClick={() => setSelectedStash(null)}
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <span className="commit-detail__icon stash-detail__icon">
+                  <Archive size={21} />
+                </span>
+                <div>
+                  <p className="eyebrow">{stashDetail.stash.ref}</p>
+                  <h2>{stashDetail.stash.message}</h2>
+                  <span>
+                    {stashDetail.stash.branch || "Detached HEAD"} · saved{" "}
+                    {exactDate(stashDetail.stash.createdAt)}
+                  </span>
+                </div>
+              </div>
+              <div className="stash-detail__actions">
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={Boolean(stashBusy)}
+                  onClick={() =>
+                    void restoreSelectedStash("apply", stashDetail.stash)
+                  }
+                >
+                  <ArchiveRestore size={14} />
+                  {stashBusy === `apply:${stashDetail.stash.id}`
+                    ? "Applying…"
+                    : "Apply"}
+                </button>
+                <button
+                  className="primary-button"
+                  type="button"
+                  disabled={Boolean(stashBusy)}
+                  onClick={() =>
+                    void restoreSelectedStash("pop", stashDetail.stash)
+                  }
+                >
+                  <ArchiveRestore size={14} />
+                  {stashBusy === `pop:${stashDetail.stash.id}`
+                    ? "Popping…"
+                    : "Pop"}
+                </button>
+                <button
+                  className="secondary-button stash-detail__delete"
+                  type="button"
+                  disabled={Boolean(stashBusy)}
+                  onClick={() => void deleteSelectedStash(stashDetail.stash)}
+                >
+                  <Trash2 size={14} />
+                  {stashBusy === `drop:${stashDetail.stash.id}`
+                    ? "Deleting…"
+                    : "Delete"}
+                </button>
+              </div>
+              <div className="commit-files-head">
+                <strong>{stashDetail.files.length} saved files</strong>
+                <span>Select a file to compare it with the stash base.</span>
+              </div>
+              <div className="commit-files">
+                {stashDetail.files.map((file) => (
+                  <button
+                    type="button"
+                    key={`${file.status}:${file.previousPath}:${file.path}`}
+                    onClick={() =>
+                      setCompareRequest({
+                        path: file.path,
+                        previousPath: file.previousPath,
+                        scope: "stash",
+                        stash: stashDetail.stash.id,
+                      })
+                    }
+                  >
+                    <span className={`change-kind change-kind--${file.status}`}>
+                      {file.status}
+                    </span>
+                    <File size={14} />
+                    <span>
+                      {file.previousPath
+                        ? `${file.previousPath} → ${file.path}`
+                        : file.path}
+                    </span>
+                    <ChevronRight size={14} />
+                  </button>
+                ))}
+              </div>
+            </div>
           ) : tab === "commits" && commitDetail ? (
             <div className="commit-detail">
               <div className="commit-detail__hero">
@@ -2655,6 +3188,23 @@ export function RepositoryWorkspace({
           type="button"
           aria-label="Close repositories"
           onClick={() => setMobileOpen(false)}
+        />
+      )}
+      {stashModalPath !== undefined && selectedId && (
+        <StashModal
+          repositoryId={selectedId}
+          path={stashModalPath}
+          message={stashMessage}
+          includeUntracked={stashIncludeUntracked}
+          counts={stashCounts}
+          error={stashError}
+          creating={stashBusy === "create"}
+          onMessageChange={setStashMessage}
+          onIncludeUntrackedChange={setStashIncludeUntracked}
+          onClose={() => {
+            if (stashBusy !== "create") setStashModalPath(undefined);
+          }}
+          onCreate={() => void createSelectedStash()}
         />
       )}
       {commitModalOpen && (

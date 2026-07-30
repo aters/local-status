@@ -16,10 +16,14 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  applyStash,
+  cleanGitError,
   GitServiceError,
   commitMessageContext,
   comparisonContents,
+  createStash,
   createCommit,
+  dropStash,
   fetchOne,
   listRepositorySummaries,
   parsePorcelainV2,
@@ -27,11 +31,14 @@ import {
   repositoryChanges,
   repositoryCommits,
   repositoryFiles,
+  repositoryStashes,
   revertChanges,
   setWorkspaceRoot,
   stageChanges,
+  stashDetails,
   syncRepository,
   unstageChanges,
+  popStash,
 } from "../server/git-service.mjs";
 
 const temporaryDirectories = [];
@@ -102,6 +109,249 @@ describe("parsePorcelainV2", () => {
   });
 });
 
+describe("stash management", () => {
+  it("filters maintenance chatter and preserves the real Git failure", () => {
+    expect(
+      cleanGitError({
+        stderr: [
+          "Auto packing the repository in background for optimum performance.",
+          "See 'git help gc' for manual housekeeping.",
+          "fatal: the actual operation failed",
+        ].join("\n"),
+      }),
+    ).toBe("the actual operation failed");
+    expect(
+      cleanGitError({
+        stderr: [
+          "Auto packing the repository in background for optimum performance.",
+          "See 'git help gc' for manual housekeeping.",
+        ].join("\n"),
+      }),
+    ).toBe("Git could not complete the request.");
+  });
+
+  it("creates, inspects, applies, pops, and drops complete stashes", async () => {
+    const workspace = temporaryDirectory("local-status-stash-workspace-");
+    const repository = join(workspace, "stash-repo");
+    mkdirSync(repository);
+    execFileSync("git", ["init", "-b", "main", repository], { stdio: "ignore" });
+    configureUser(repository);
+    writeFileSync(join(repository, ".gitignore"), "ignored.log\n");
+    writeFileSync(join(repository, "mixed.txt"), "base\n");
+    writeFileSync(join(repository, "other.txt"), "other base\n");
+    git(repository, "add", ".");
+    git(repository, "commit", "-m", "Base");
+
+    writeFileSync(join(repository, "mixed.txt"), "base\nstaged\n");
+    git(repository, "add", "mixed.txt");
+    writeFileSync(join(repository, "mixed.txt"), "base\nstaged\nworking\n");
+    writeFileSync(join(repository, "other.txt"), "other changed\n");
+    writeFileSync(join(repository, "new file.txt"), "new\n");
+    writeFileSync(join(repository, "ignored.log"), "ignored\n");
+
+    setWorkspaceRoot(workspace);
+    const created = await createStash("stash-repo", {
+      message: "checkpoint",
+      includeUntracked: true,
+      path: null,
+    });
+    expect(created.stash).toMatchObject({
+      message: "checkpoint",
+      branch: "main",
+      fileCount: 3,
+    });
+    expect(created.remainingFiles).toBe(0);
+    expect(git(repository, "status", "--short")).toBe("");
+    expect(readFileSync(join(repository, "ignored.log"), "utf8")).toBe("ignored\n");
+
+    const listed = await repositoryStashes("stash-repo");
+    expect(listed.stashes).toHaveLength(1);
+    expect(listed.stashes[0].id).toBe(created.stash.id);
+    const detail = await stashDetails("stash-repo", created.stash.id);
+    expect(detail.files.map((file) => file.path).sort()).toEqual([
+      "mixed.txt",
+      "new file.txt",
+      "other.txt",
+    ]);
+    const untrackedComparison = await comparisonContents("stash-repo", {
+      path: "new file.txt",
+      scope: "stash",
+      stash: created.stash.id,
+    });
+    expect(untrackedComparison.original.missing).toBe(true);
+    expect(untrackedComparison.modified.content).toBe("new\n");
+
+    const applied = await applyStash("stash-repo", created.stash.id);
+    expect(applied).toMatchObject({
+      outcome: "applied",
+      stashRetained: true,
+    });
+    expect(git(repository, "status", "--short")).toContain("MM mixed.txt");
+
+    git(repository, "reset", "--hard", "HEAD");
+    git(repository, "clean", "-fd");
+    const popped = await popStash("stash-repo", created.stash.id);
+    expect(popped).toMatchObject({
+      outcome: "applied",
+      stashRetained: false,
+    });
+    expect(await repositoryStashes("stash-repo")).toMatchObject({ stashes: [] });
+
+    git(repository, "reset", "--hard", "HEAD");
+    git(repository, "clean", "-fd");
+    writeFileSync(join(repository, "mixed.txt"), "another checkpoint\n");
+    const first = await createStash("stash-repo", {
+      message: "first",
+      includeUntracked: true,
+    });
+    writeFileSync(join(repository, "mixed.txt"), "newest checkpoint\n");
+    await createStash("stash-repo", {
+      message: "newest",
+      includeUntracked: true,
+    });
+    await dropStash("stash-repo", first.stash.id);
+    const remaining = await repositoryStashes("stash-repo");
+    expect(remaining.stashes.map((stash) => stash.message)).toEqual(["newest"]);
+    await expect(
+      dropStash("stash-repo", first.stash.id),
+    ).rejects.toMatchObject({ code: "STALE_STASH" });
+  });
+
+  it("stashes one file with its complete index state and leaves other work alone", async () => {
+    const workspace = temporaryDirectory("local-status-file-stash-");
+    const repository = join(workspace, "file-stash");
+    mkdirSync(repository);
+    execFileSync("git", ["init", "-b", "main", repository], { stdio: "ignore" });
+    configureUser(repository);
+    writeFileSync(join(repository, "mixed file.txt"), "base\n");
+    writeFileSync(join(repository, "other.txt"), "other base\n");
+    git(repository, "add", ".");
+    git(repository, "commit", "-m", "Base");
+    writeFileSync(join(repository, "mixed file.txt"), "base\nstaged\n");
+    git(repository, "add", "mixed file.txt");
+    writeFileSync(
+      join(repository, "mixed file.txt"),
+      "base\nstaged\nworking\n",
+    );
+    writeFileSync(join(repository, "other.txt"), "other changed\n");
+
+    setWorkspaceRoot(workspace);
+    const created = await createStash("file-stash", {
+      message: "one file",
+      includeUntracked: true,
+      path: "mixed file.txt",
+    });
+    expect(created.stash.fileCount).toBe(1);
+    expect(git(repository, "status", "--short")).toBe("M other.txt");
+
+    const restored = await applyStash("file-stash", created.stash.id);
+    expect(restored.outcome).toBe("applied");
+    expect(git(repository, "status", "--short").split("\n")).toEqual([
+      'MM "mixed file.txt"',
+      " M other.txt",
+    ]);
+    expect(readFileSync(join(repository, "mixed file.txt"), "utf8")).toBe(
+      "base\nstaged\nworking\n",
+    );
+  });
+
+  it("supports renamed Unicode paths and optional untracked exclusion", async () => {
+    const workspace = temporaryDirectory("local-status-stash-paths-");
+    const repository = join(workspace, "paths");
+    mkdirSync(repository);
+    execFileSync("git", ["init", "-b", "main", repository], { stdio: "ignore" });
+    configureUser(repository);
+    writeFileSync(join(repository, "old ü.txt"), "rename\n");
+    writeFileSync(join(repository, "tracked.txt"), "base\n");
+    git(repository, "add", ".");
+    git(repository, "commit", "-m", "Base");
+    git(repository, "mv", "old ü.txt", "new ü.txt");
+    writeFileSync(join(repository, "tracked.txt"), "changed\n");
+    writeFileSync(join(repository, "untracked ü.txt"), "new\n");
+
+    setWorkspaceRoot(workspace);
+    const renamed = await createStash("paths", {
+      message: "rename",
+      includeUntracked: true,
+      path: "new ü.txt",
+    });
+    const renameDetail = await stashDetails("paths", renamed.stash.id);
+    expect(renameDetail.files).toEqual([
+      expect.objectContaining({
+        status: "R",
+        previousPath: "old ü.txt",
+        path: "new ü.txt",
+      }),
+    ]);
+    expect(
+      (
+        await comparisonContents("paths", {
+          path: "new ü.txt",
+          previousPath: "old ü.txt",
+          scope: "stash",
+          stash: renamed.stash.id,
+        })
+      ).modified.content,
+    ).toBe("rename\n");
+
+    const trackedOnly = await createStash("paths", {
+      message: "tracked only",
+      includeUntracked: false,
+    });
+    expect(trackedOnly.stash.fileCount).toBe(1);
+    expect((await repositoryChanges("paths")).changes).toEqual([
+      expect.objectContaining({
+        path: "untracked ü.txt",
+        scope: "untracked",
+      }),
+    ]);
+  });
+
+  it("keeps a stash when restoration conflicts and rejects repositories without a commit", async () => {
+    const workspace = temporaryDirectory("local-status-stash-conflict-");
+    const repository = join(workspace, "conflict");
+    const unborn = join(workspace, "unborn");
+    mkdirSync(repository);
+    mkdirSync(unborn);
+    execFileSync("git", ["init", "-b", "main", repository], { stdio: "ignore" });
+    execFileSync("git", ["init", "-b", "main", unborn], { stdio: "ignore" });
+    configureUser(repository);
+    configureUser(unborn);
+    writeFileSync(join(repository, "shared.txt"), "base\n");
+    git(repository, "add", ".");
+    git(repository, "commit", "-m", "Base");
+    writeFileSync(join(repository, "shared.txt"), "stashed\n");
+    writeFileSync(join(unborn, "first.txt"), "not committed\n");
+
+    setWorkspaceRoot(workspace);
+    const created = await createStash("conflict", {
+      message: "will conflict",
+      includeUntracked: true,
+    });
+    writeFileSync(join(repository, "shared.txt"), "new head\n");
+    git(repository, "add", ".");
+    git(repository, "commit", "-m", "Different change");
+
+    const restored = await applyStash("conflict", created.stash.id);
+    expect(restored).toMatchObject({
+      outcome: "conflicts",
+      stashRetained: true,
+    });
+    expect(restored.changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "shared.txt", scope: "conflict" }),
+      ]),
+    );
+    expect((await repositoryStashes("conflict")).stashes).toHaveLength(1);
+    await expect(
+      createStash("unborn", {
+        message: "",
+        includeUntracked: true,
+      }),
+    ).rejects.toMatchObject({ code: "STASH_REQUIRES_COMMIT" });
+  });
+});
+
 describe("local Git integration", () => {
   it("stages, unstages, and safely reverts individual and grouped changes", async () => {
     const workspace = temporaryDirectory("local-status-actions-");
@@ -131,6 +381,21 @@ describe("local Git integration", () => {
       ]),
     );
 
+    await stageChanges("working-copy", {
+      scope: "unstaged",
+      paths: ["tracked.txt", "new file.md"],
+    });
+    expect((await repositoryChanges("working-copy")).changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "tracked.txt", scope: "staged" }),
+        expect.objectContaining({ path: "new file.md", scope: "staged" }),
+      ]),
+    );
+    await unstageChanges("working-copy", {
+      scope: "staged",
+      paths: ["tracked.txt", "new file.md"],
+    });
+
     await stageChanges("working-copy", { scope: "untracked" });
     expect((await repositoryChanges("working-copy")).changes).toEqual(
       expect.arrayContaining([
@@ -155,6 +420,17 @@ describe("local Git integration", () => {
     expect(readFileSync(join(repository, "tracked.txt"), "utf8")).toBe("committed\n");
     expect(existsSync(join(repository, "new file.md"))).toBe(false);
 
+    writeFileSync(join(repository, "tracked.txt"), "batch edit\n");
+    writeFileSync(join(repository, "old-name.txt"), "batch rename source edit\n");
+    await revertChanges("working-copy", {
+      scope: "working",
+      paths: ["tracked.txt", "old-name.txt"],
+    });
+    expect(readFileSync(join(repository, "tracked.txt"), "utf8")).toBe("committed\n");
+    expect(readFileSync(join(repository, "old-name.txt"), "utf8")).toBe(
+      "rename me\n",
+    );
+
     renameSync(join(repository, "old-name.txt"), join(repository, "new-name.txt"));
     expect((await repositoryChanges("working-copy")).changes).toEqual(
       expect.arrayContaining([
@@ -171,6 +447,12 @@ describe("local Git integration", () => {
       stageChanges("working-copy", {
         scope: "untracked",
         path: "../../outside.txt",
+      }),
+    ).rejects.toBeInstanceOf(GitServiceError);
+    await expect(
+      stageChanges("working-copy", {
+        scope: "unstaged",
+        paths: ["tracked.txt", "../../outside.txt"],
       }),
     ).rejects.toBeInstanceOf(GitServiceError);
   });

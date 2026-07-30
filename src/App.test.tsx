@@ -10,7 +10,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
-import type { LocalStatusBridge } from "./types";
+import type { ChangeItem, LocalStatusBridge } from "./types";
 
 vi.mock("./components/MonacoDiff", () => ({
   default: ({ findRequest }: { findRequest?: number }) => (
@@ -250,6 +250,67 @@ function createBridge(current = true) {
             status: "M",
           },
         ],
+      })),
+      stashes: vi.fn(async (repositoryId) => ({
+        repositoryId,
+        stashes: [
+          {
+            id: "e".repeat(40),
+            ref: "stash@{0}",
+            subject: "On feature: checkpoint",
+            message: "checkpoint",
+            branch: "feature",
+            createdAt: new Date().toISOString(),
+            fileCount: 2,
+          },
+        ],
+      })),
+      stash: vi.fn(async (repositoryId, stashId) => ({
+        repositoryId,
+        stash: {
+          id: stashId,
+          ref: "stash@{0}",
+          subject: "On feature: checkpoint",
+          message: "checkpoint",
+          branch: "feature",
+          createdAt: new Date().toISOString(),
+          fileCount: 2,
+        },
+        files: [
+          { status: "M", path: "src/App.tsx", previousPath: null },
+          { status: "A", path: "src/NewPanel.tsx", previousPath: null },
+        ],
+      })),
+      createStash: vi.fn(async (repositoryId) => ({
+        repositoryId,
+        stash: {
+          id: "f".repeat(40),
+          ref: "stash@{0}",
+          subject: "On feature: checkpoint",
+          message: "checkpoint",
+          branch: "feature",
+          createdAt: new Date().toISOString(),
+          fileCount: 2,
+        },
+        changes: [],
+        remainingFiles: 0,
+      })),
+      applyStash: vi.fn(async (repositoryId) => ({
+        repositoryId,
+        outcome: "applied" as const,
+        stashRetained: true,
+        changes: [],
+      })),
+      popStash: vi.fn(async (repositoryId) => ({
+        repositoryId,
+        outcome: "applied" as const,
+        stashRetained: false,
+        changes: [],
+      })),
+      dropStash: vi.fn(async (repositoryId, stashId) => ({
+        repositoryId,
+        stashId,
+        dropped: true,
       })),
       sync: vi.fn(async (repositoryId) => ({
         repositoryId,
@@ -607,6 +668,202 @@ describe("Local Status", () => {
       }),
     );
     expect(window.localStatus.repositories.sync).toHaveBeenCalledWith("changed-web");
+  });
+
+  it("uses Shift-clicked file ranges for existing row actions", async () => {
+    const batchChanges: ChangeItem[] = [
+      {
+        id: "working:src/App.tsx",
+        path: "src/App.tsx",
+        previousPath: null,
+        scope: "working",
+        kind: "modified",
+        status: "M",
+      },
+      {
+        id: "working:src/Details.tsx",
+        path: "src/Details.tsx",
+        previousPath: null,
+        scope: "working",
+        kind: "modified",
+        status: "M",
+      },
+      {
+        id: "untracked:src/NewPanel.tsx",
+        path: "src/NewPanel.tsx",
+        previousPath: null,
+        scope: "untracked",
+        kind: "untracked",
+        status: "?",
+      },
+    ];
+    vi.mocked(window.localStatus.repositories.changes).mockResolvedValue({
+      repositoryId: "changed-web",
+      changes: batchChanges,
+    });
+    vi.mocked(window.localStatus.repositories.stage).mockResolvedValue({
+      repositoryId: "changed-web",
+      changes: batchChanges,
+    });
+    vi.mocked(window.localStatus.repositories.revert).mockResolvedValue({
+      repositoryId: "changed-web",
+      changes: batchChanges,
+    });
+    render(<App />);
+
+    const first = await screen.findByTitle("src/App.tsx");
+    const last = await screen.findByTitle("src/NewPanel.tsx");
+    fireEvent.click(first);
+    fireEvent.click(last, { shiftKey: true });
+
+    expect(document.querySelectorAll(".change-row.is-selected")).toHaveLength(3);
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: "Stage 3 selected files",
+      })[1],
+    );
+    await waitFor(() =>
+      expect(window.localStatus.repositories.stage).toHaveBeenCalledWith(
+        "changed-web",
+        {
+          scope: "unstaged",
+          paths: [
+            "src/App.tsx",
+            "src/Details.tsx",
+            "src/NewPanel.tsx",
+          ],
+        },
+      ),
+    );
+
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: "Revert 3 selected files",
+      })[0],
+    );
+    await waitFor(() =>
+      expect(window.localStatus.repositories.revert).toHaveBeenCalledWith(
+        "changed-web",
+        {
+          scope: "unstaged",
+          paths: [
+            "src/App.tsx",
+            "src/Details.tsx",
+            "src/NewPanel.tsx",
+          ],
+        },
+      ),
+    );
+
+    fireEvent.click(await screen.findByTitle("src/Details.tsx"));
+    expect(document.querySelectorAll(".change-row.is-selected")).toHaveLength(1);
+    expect(
+      screen.getByRole("button", { name: "Stage src/Details.tsx" }),
+    ).toBeVisible();
+  });
+
+  it("explains how to resolve a sync blocked by local changes", async () => {
+    const user = userEvent.setup();
+    window.localStatus.repositories.sync = vi.fn(async () => {
+      throw new Error(
+        "Error invoking remote method 'repositories:sync': GitServiceError: error: Your local changes to the following files would be overwritten by merge:",
+      );
+    });
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Sync changes: 2 incoming, 1 outgoing",
+      }),
+    );
+
+    expect(
+      await screen.findByText(
+        "Sync stopped to protect your local changes. Commit, revert, or stash the affected files, then try Sync again.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Stash changes" }),
+    ).toBeVisible();
+  });
+
+  it("creates bulk and per-file stashes with clear defaults", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", { name: /^Stash$/ }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "Stash changes" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("checkbox", { name: /Include untracked files/ }),
+    ).toBeChecked();
+    await user.type(
+      screen.getByPlaceholderText("What are you saving?"),
+      "before sync",
+    );
+    await user.click(screen.getByRole("button", { name: "Stash changes" }));
+    expect(window.localStatus.repositories.createStash).toHaveBeenCalledWith(
+      "changed-web",
+      {
+        message: "before sync",
+        includeUntracked: true,
+        path: null,
+      },
+    );
+    expect(await screen.findByRole("button", { name: "View stash" })).toBeVisible();
+
+    cleanup();
+    window.localStatus = createBridge();
+    render(<App />);
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Stash all changes for src/App.tsx",
+      }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "Stash this file" }),
+    ).toBeVisible();
+    expect(screen.getByText("src/App.tsx")).toBeVisible();
+    expect(
+      screen.queryByRole("checkbox", { name: /Include untracked files/ }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Stash file" }));
+    expect(window.localStatus.repositories.createStash).toHaveBeenCalledWith(
+      "changed-web",
+      {
+        message: "",
+        includeUntracked: true,
+        path: "src/App.tsx",
+      },
+    );
+  });
+
+  it("browses stash files and exposes apply, pop, and delete actions", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("tab", { name: "Stashes" }));
+    const stashRow = await screen.findByRole("button", {
+      name: /checkpoint.*feature.*stash@\{0\}/i,
+    });
+    await user.click(stashRow);
+    expect(await screen.findByRole("heading", { name: "checkpoint" })).toBeVisible();
+    expect(screen.getByText("2 saved files")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    expect(window.localStatus.repositories.applyStash).toHaveBeenCalledWith(
+      "changed-web",
+      "e".repeat(40),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Pop" }));
+    expect(window.localStatus.repositories.popStash).toHaveBeenCalledWith(
+      "changed-web",
+      "e".repeat(40),
+    );
   });
 
   it("groups tracked and untracked files together as unstaged changes", async () => {

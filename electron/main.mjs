@@ -15,12 +15,14 @@ import {
 } from "electron";
 import pty from "node-pty";
 import {
+  applyStash,
   commitMessageContext,
   commitDetails,
   comparisonContents,
+  createStash,
   createCommit,
-  applyRepositoryStash,
   discoverRepositories,
+  dropStash,
   fetchAll,
   fetchOne,
   getRepository,
@@ -32,7 +34,9 @@ import {
   repositoryCommits,
   repositoryFiles,
   repositoryStashes,
+  stashDetails,
   workspaceFiles,
+  popStash,
   prepareCommit,
   revertChanges,
   stageChanges,
@@ -243,12 +247,34 @@ function validateChangeSelection(input) {
   if (!["conflict", "staged", "working", "untracked", "unstaged"].includes(scope)) {
     throw new Error("Invalid change scope.");
   }
+  const path =
+    request.path === undefined || request.path === null
+      ? null
+      : requireString(request.path, "file path", 8_192);
+  let paths;
+  if (request.paths !== undefined) {
+    if (
+      !Array.isArray(request.paths) ||
+      !request.paths.length ||
+      request.paths.length > 1_000
+    ) {
+      throw new Error("Invalid file selection.");
+    }
+    paths = [
+      ...new Set(
+        request.paths.map((entry) =>
+          requireString(entry, "file path", 8_192),
+        ),
+      ),
+    ];
+  }
+  if (path && paths) {
+    throw new Error("Invalid file selection.");
+  }
   return {
     scope,
-    path:
-      request.path === undefined || request.path === null
-        ? null
-        : requireString(request.path, "file path", 8_192),
+    path,
+    paths,
   };
 }
 
@@ -264,6 +290,34 @@ function validateCommitInput(input) {
     throw new Error("Invalid commit request.");
   }
   return { message, snapshotId };
+}
+
+function validateStashId(value) {
+  const stashId = requireString(value, "stash", 40);
+  if (!/^[0-9a-f]{40}$/i.test(stashId)) {
+    throw new Error("Invalid stash.");
+  }
+  return stashId;
+}
+
+function validateStashCreateInput(input) {
+  const request = requireObject(input, "stash");
+  const message =
+    typeof request.message === "string" ? request.message.trim() : "";
+  if (message.length > 200 || message.includes("\0")) {
+    throw new Error("Invalid stash message.");
+  }
+  if (typeof request.includeUntracked !== "boolean") {
+    throw new Error("Invalid stash options.");
+  }
+  return {
+    message,
+    includeUntracked: request.includeUntracked,
+    path:
+      request.path === undefined || request.path === null
+        ? null
+        : requireString(request.path, "file path", 8_192),
+  };
 }
 
 function validateAiGeneration(input) {
@@ -290,24 +344,33 @@ function validateAiGeneration(input) {
 async function confirmRevert(selection) {
   const isUnstaged = selection.scope === "unstaged";
   const isUntracked = selection.scope === "untracked";
-  const target = selection.path
-    ? `“${selection.path}”`
-    : isUnstaged
+  const selectedCount = selection.paths?.length ?? 0;
+  const isSelectedSubset = Boolean(selectedCount || selection.path);
+  const isAllUnstaged = isUnstaged && !isSelectedSubset;
+  const target = selectedCount
+    ? `${selectedCount} selected ${selectedCount === 1 ? "file" : "files"}`
+    : selection.path
+      ? `“${selection.path}”`
+    : isAllUnstaged
       ? "all unstaged changes"
       : `all ${selection.scope === "untracked" ? "untracked files" : "working tree changes"}`;
   const title = isUntracked
     ? "Delete untracked work?"
-    : isUnstaged
+    : isAllUnstaged
       ? "Discard all unstaged changes?"
+      : selectedCount
+        ? "Discard selected changes?"
       : "Discard local changes?";
-  const detail = isUnstaged
+  const detail = isAllUnstaged
     ? "Tracked edits will be replaced by the index version, and untracked files will be permanently deleted. This cannot be undone by Git."
+    : isUnstaged
+      ? "Selected tracked edits will be replaced by the index version, and selected untracked files will be permanently deleted. This cannot be undone by Git."
     : isUntracked
       ? "Untracked files will be permanently deleted. This cannot be undone by Git."
       : "The selected working tree edits will be replaced by the index version.";
   const primaryAction = isUntracked
     ? "Delete"
-    : isUnstaged
+    : isAllUnstaged
       ? "Discard all"
       : "Discard";
   const result = await dialog.showMessageBox(mainWindow, {
@@ -316,6 +379,41 @@ async function confirmRevert(selection) {
     message: `${isUntracked ? "Delete" : "Discard"} ${target}?`,
     detail,
     buttons: [primaryAction, "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+  });
+  return result.response === 0;
+}
+
+async function confirmStashRestore(repositoryId, action) {
+  const current = await repositoryChanges(repositoryId);
+  if (!current.changes.length) return true;
+  if (current.changes.some((change) => change.scope === "conflict")) return true;
+  const files = new Set(current.changes.map((change) => change.path)).size;
+  const verb = action === "pop" ? "Pop" : "Apply";
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: "warning",
+    title: `${verb} stash over local changes?`,
+    message: `${files} local ${files === 1 ? "file has" : "files have"} changes.`,
+    detail:
+      "Git will try to combine both sets of changes. Overlapping edits may create conflicts.",
+    buttons: [`${verb} anyway`, "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+  });
+  return result.response === 0;
+}
+
+async function confirmDropStash(repositoryId, stashId) {
+  const detail = await stashDetails(repositoryId, stashId);
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: "warning",
+    title: "Delete stash?",
+    message: `Delete “${detail.stash.message}”?`,
+    detail: "This removes the saved changes from Git and cannot be undone.",
+    buttons: ["Delete stash", "Cancel"],
     defaultId: 1,
     cancelId: 1,
     noLink: true,
@@ -507,6 +605,69 @@ function registerIpc() {
     }
     return revertChanges(repositoryId, selection);
   });
+  handle("repositories:stashes", async (payload) => {
+    const repositoryId = requireString(
+      requireObject(payload).repositoryId,
+      "repository",
+    );
+    await requireActiveRepository(repositoryId);
+    return repositoryStashes(repositoryId);
+  });
+  handle("repositories:stash", async (payload) => {
+    const request = requireObject(payload);
+    const repositoryId = requireString(request.repositoryId, "repository");
+    await requireActiveRepository(repositoryId);
+    return stashDetails(repositoryId, validateStashId(request.stashId));
+  });
+  handle("repositories:create-stash", async (payload) => {
+    const request = requireObject(payload);
+    const repositoryId = requireString(request.repositoryId, "repository");
+    await requireActiveRepository(repositoryId);
+    return createStash(repositoryId, validateStashCreateInput(request.input));
+  });
+  handle("repositories:apply-stash", async (payload) => {
+    const request = requireObject(payload);
+    const repositoryId = requireString(request.repositoryId, "repository");
+    await requireActiveRepository(repositoryId);
+    const stashId = validateStashId(request.stashId);
+    if (!(await confirmStashRestore(repositoryId, "apply"))) {
+      return {
+        ...(await repositoryChanges(repositoryId)),
+        outcome: "cancelled",
+        stashRetained: true,
+      };
+    }
+    return applyStash(repositoryId, stashId);
+  });
+  handle("repositories:pop-stash", async (payload) => {
+    const request = requireObject(payload);
+    const repositoryId = requireString(request.repositoryId, "repository");
+    await requireActiveRepository(repositoryId);
+    const stashId = validateStashId(request.stashId);
+    if (!(await confirmStashRestore(repositoryId, "pop"))) {
+      return {
+        ...(await repositoryChanges(repositoryId)),
+        outcome: "cancelled",
+        stashRetained: true,
+      };
+    }
+    return popStash(repositoryId, stashId);
+  });
+  handle("repositories:drop-stash", async (payload) => {
+    const request = requireObject(payload);
+    const repositoryId = requireString(request.repositoryId, "repository");
+    await requireActiveRepository(repositoryId);
+    const stashId = validateStashId(request.stashId);
+    if (!(await confirmDropStash(repositoryId, stashId))) {
+      return {
+        repositoryId,
+        stashId,
+        dropped: false,
+        cancelled: true,
+      };
+    }
+    return dropStash(repositoryId, stashId);
+  });
   handle("repositories:sync", async (payload) => {
     const repositoryId = requireString(
       requireObject(payload).repositoryId,
@@ -557,20 +718,6 @@ function registerIpc() {
       stashChanges: true,
     });
   });
-  handle("repositories:stashes", (payload) =>
-    repositoryStashes(
-      requireString(requireObject(payload).repositoryId, "repository"),
-    ),
-  );
-  handle("repositories:stash-action", (payload) => {
-    const request = requireObject(payload);
-    return applyRepositoryStash(
-      requireString(request.repositoryId, "repository"),
-      requireString(request.stashRef, "stash", 100),
-      requireString(request.mode, "stash action", 20),
-    );
-  });
-
   handle("pull-requests:list", async () => {
     const repositories = await discoverRepositories({ refresh: true });
     return githubService.list([...repositories.values()], {

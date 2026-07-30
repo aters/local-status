@@ -287,34 +287,16 @@ export class GithubService {
   async activeAccount(executable) {
     const result = await this.run(
       executable,
-      [
-        "auth",
-        "status",
-        "--active",
-        "--hostname",
-        "github.com",
-        "--json",
-        "hosts",
-      ],
+      ["api", "user", "--jq", ".login"],
       { timeout: STATUS_TIMEOUT_MS },
     );
-    const payload = parseJson(result.stdout, "authentication");
-    const accounts = payload?.hosts?.["github.com"];
-    const active = Array.isArray(accounts)
-      ? accounts.find(
-          (account) =>
-            account?.active === true &&
-            account?.state === "success" &&
-            typeof account?.login === "string" &&
-            account.login.trim(),
-        )
-      : null;
-    if (!active) {
+    const login = String(result.stdout || "").trim();
+    if (!/^[a-zA-Z0-9-]{1,100}$/.test(login)) {
       throw new Error(
         "GitHub CLI is not signed in to github.com. Run gh auth login, then refresh.",
       );
     }
-    return active.login.trim();
+    return login;
   }
 
   async resolveRepository(executable, repository) {

@@ -43,6 +43,20 @@ export const api = {
     repositoryId: string,
     selection: Parameters<LocalStatusBridge["repositories"]["revert"]>[1],
   ) => bridge().repositories.revert(repositoryId, selection),
+  stashes: (repositoryId: string) =>
+    bridge().repositories.stashes(repositoryId),
+  stash: (repositoryId: string, stashId: string) =>
+    bridge().repositories.stash(repositoryId, stashId),
+  createStash: (
+    repositoryId: string,
+    input: Parameters<LocalStatusBridge["repositories"]["createStash"]>[1],
+  ) => bridge().repositories.createStash(repositoryId, input),
+  applyStash: (repositoryId: string, stashId: string) =>
+    bridge().repositories.applyStash(repositoryId, stashId),
+  popStash: (repositoryId: string, stashId: string) =>
+    bridge().repositories.popStash(repositoryId, stashId),
+  dropStash: (repositoryId: string, stashId: string) =>
+    bridge().repositories.dropStash(repositoryId, stashId),
   sync: (repositoryId: string) => bridge().repositories.sync(repositoryId),
   scripts: (repositoryId: string) => bridge().repositories.scripts(repositoryId),
   setFavourite: (groupId: string, favourite: boolean) =>
@@ -53,13 +67,6 @@ export const api = {
     bridge().repositories.branches(repositoryId),
   switchBranch: (repositoryId: string, targetRef: string) =>
     bridge().repositories.switchBranch(repositoryId, targetRef),
-  stashes: (repositoryId: string) =>
-    bridge().repositories.stashes(repositoryId),
-  stashAction: (
-    repositoryId: string,
-    stashRef: string,
-    mode: "apply" | "pop",
-  ) => bridge().repositories.stashAction(repositoryId, stashRef, mode),
   pullRequests: () => bridge().pullRequests.list(),
   openPullRequest: (url: string) => bridge().pullRequests.open(url),
   preferences: () =>

@@ -1,4 +1,10 @@
-export type ChangeScope = "conflict" | "staged" | "working" | "untracked" | "commit";
+export type ChangeScope =
+  | "conflict"
+  | "staged"
+  | "working"
+  | "untracked"
+  | "commit"
+  | "stash";
 export type ChangeKind =
   | "added"
   | "copied"
@@ -113,12 +119,13 @@ export interface ChangeItem {
 
 export type ChangeAction = "stage" | "unstage" | "revert";
 export type ChangeActionScope =
-  | Exclude<ChangeScope, "commit">
+  | Exclude<ChangeScope, "commit" | "stash">
   | "unstaged";
 
 export interface ChangeSelection {
   scope: ChangeActionScope;
   path?: string | null;
+  paths?: string[];
 }
 
 export interface ChangeMutationResult {
@@ -191,6 +198,49 @@ export interface FileChange {
   previousPath: string | null;
 }
 
+export interface StashSummary {
+  id: string;
+  ref: string;
+  subject: string;
+  message: string;
+  branch: string | null;
+  createdAt: string;
+  fileCount: number;
+}
+
+export interface StashDetails {
+  repositoryId: string;
+  stash: StashSummary;
+  files: FileChange[];
+}
+
+export interface StashCreateInput {
+  message: string;
+  includeUntracked: boolean;
+  path?: string | null;
+}
+
+export interface StashCreateResult {
+  repositoryId: string;
+  stash: StashSummary;
+  changes: ChangeItem[];
+  remainingFiles: number;
+}
+
+export interface StashMutationResult {
+  repositoryId: string;
+  outcome: "applied" | "conflicts" | "cancelled";
+  stashRetained: boolean;
+  changes: ChangeItem[];
+}
+
+export interface StashDropResult {
+  repositoryId: string;
+  stashId: string;
+  dropped: boolean;
+  cancelled?: boolean;
+}
+
 export interface ComparisonSide {
   content: string;
   source: string;
@@ -247,25 +297,6 @@ export interface BranchSwitchResult {
   cancelled: boolean;
   stashed?: { ref: string; message: string } | null;
   repository?: RepositorySummary;
-}
-
-export interface RepositoryStash {
-  ref: string;
-  index: number;
-  message: string;
-  branch: string | null;
-  createdAt: string;
-}
-
-export interface RepositoryStashes {
-  repositoryId: string;
-  stashes: RepositoryStash[];
-}
-
-export interface StashActionResult extends RepositoryStashes {
-  mode: "apply" | "pop";
-  stashRef: string;
-  changes: ChangeItem[];
 }
 
 export interface ServiceProfile {
@@ -328,6 +359,7 @@ export interface LocalStatusBridge {
         previousPath?: string | null;
         scope: ChangeScope;
         commit?: string | null;
+        stash?: string | null;
       },
     ): Promise<Comparison>;
     fetch(repositoryId: string): Promise<{
@@ -361,6 +393,29 @@ export interface LocalStatusBridge {
       repositoryId: string,
       selection: ChangeSelection,
     ): Promise<ChangeMutationResult>;
+    stashes(
+      repositoryId: string,
+    ): Promise<{ repositoryId: string; stashes: StashSummary[] }>;
+    stash(
+      repositoryId: string,
+      stashId: string,
+    ): Promise<StashDetails>;
+    createStash(
+      repositoryId: string,
+      input: StashCreateInput,
+    ): Promise<StashCreateResult>;
+    applyStash(
+      repositoryId: string,
+      stashId: string,
+    ): Promise<StashMutationResult>;
+    popStash(
+      repositoryId: string,
+      stashId: string,
+    ): Promise<StashMutationResult>;
+    dropStash(
+      repositoryId: string,
+      stashId: string,
+    ): Promise<StashDropResult>;
     sync(repositoryId: string): Promise<{
       repositoryId: string;
       upstream: string;
@@ -387,12 +442,6 @@ export interface LocalStatusBridge {
       repositoryId: string,
       targetRef: string,
     ): Promise<BranchSwitchResult>;
-    stashes(repositoryId: string): Promise<RepositoryStashes>;
-    stashAction(
-      repositoryId: string,
-      stashRef: string,
-      mode: "apply" | "pop",
-    ): Promise<StashActionResult>;
   };
   pullRequests: {
     list(): Promise<PullRequestsResponse>;
