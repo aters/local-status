@@ -1,7 +1,10 @@
 import type { ITheme } from "@xterm/xterm";
-import type { Theme } from "./theme";
+import type { ResolvedColorScheme, Theme } from "./theme";
 
-export const TERMINAL_THEMES: Record<Theme, ITheme> = {
+const FIXED_TERMINAL_THEMES: Record<
+  Exclude<Theme, "liquid-glass">,
+  ITheme
+> = {
   green: {
     background: "#08100e",
     foreground: "#d7e3dd",
@@ -117,4 +120,80 @@ export const TERMINAL_THEMES: Record<Theme, ITheme> = {
     brightCyan: "#83dde0",
     brightWhite: "#f2f7f9",
   },
+};
+
+const LIQUID_GLASS_TERMINAL_THEMES: Record<ResolvedColorScheme, ITheme> = {
+  light: {
+    background: "#f7f9fc",
+    foreground: "#1f2c3d",
+    cursor: "#147d6e",
+    cursorAccent: "#f7f9fc",
+    selectionBackground: "#bfdde2",
+    black: "#243246",
+    red: "#b93646",
+    green: "#176b4a",
+    yellow: "#806000",
+    blue: "#1768a6",
+    magenta: "#7650a7",
+    cyan: "#176f78",
+    white: "#657286",
+    brightBlack: "#536176",
+    brightRed: "#d84d5d",
+    brightGreen: "#21855a",
+    brightYellow: "#9b7300",
+    brightBlue: "#217fc4",
+    brightMagenta: "#8c65bc",
+    brightCyan: "#218792",
+    brightWhite: "#ffffff",
+  },
+  dark: {
+    background: "#111827",
+    foreground: "#e7edf5",
+    cursor: "#66e0c2",
+    cursorAccent: "#111827",
+    selectionBackground: "#344b5f",
+    black: "#101722",
+    red: "#f08491",
+    green: "#66d9b5",
+    yellow: "#e6c575",
+    blue: "#78bdf2",
+    magenta: "#bea3e8",
+    cyan: "#6fd3d9",
+    white: "#dce5ef",
+    brightBlack: "#718095",
+    brightRed: "#ffa0aa",
+    brightGreen: "#8be8cb",
+    brightYellow: "#f2d791",
+    brightBlue: "#9dd2f7",
+    brightMagenta: "#d3bdf3",
+    brightCyan: "#93e5e8",
+    brightWhite: "#f7fbff",
+  },
+};
+
+export const TERMINAL_THEMES: Record<
+  Theme,
+  Record<ResolvedColorScheme, ITheme>
+> = {
+  green: {
+    light: FIXED_TERMINAL_THEMES.green,
+    dark: FIXED_TERMINAL_THEMES.green,
+  },
+  dark: {
+    light: FIXED_TERMINAL_THEMES.dark,
+    dark: FIXED_TERMINAL_THEMES.dark,
+  },
+  light: {
+    light: FIXED_TERMINAL_THEMES.light,
+    dark: FIXED_TERMINAL_THEMES.light,
+  },
+  glass: {
+    light: FIXED_TERMINAL_THEMES.glass,
+    dark: FIXED_TERMINAL_THEMES.glass,
+  },
+  neumorphic: {
+    light: FIXED_TERMINAL_THEMES.neumorphic,
+    dark: FIXED_TERMINAL_THEMES.neumorphic,
+  },
+  "liquid-glass": LIQUID_GLASS_TERMINAL_THEMES,
 };

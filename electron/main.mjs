@@ -10,6 +10,7 @@ import {
   Menu,
   net,
   nativeImage,
+  nativeTheme,
   protocol,
   shell,
 } from "electron";
@@ -54,6 +55,7 @@ import {
 import { SettingsStore } from "./settings-store.mjs";
 import { TerminalManager } from "./terminal-manager.mjs";
 import { WorkspaceManager } from "./workspace-manager.mjs";
+import themeManifest from "../shared/themes.json" with { type: "json" };
 
 const appDirectory = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const rendererRoot = join(appDirectory, "dist");
@@ -95,6 +97,61 @@ let terminalManager;
 let aiRunner;
 let githubService;
 let quitting = false;
+
+function testAppearanceOverride(name) {
+  if (!process.env.LOCAL_STATUS_E2E_PORT) return null;
+  const value = process.env[name];
+  return value === undefined ? null : value;
+}
+
+function systemAppearance() {
+  const colorSchemeOverride = testAppearanceOverride(
+    "LOCAL_STATUS_E2E_COLOR_SCHEME",
+  );
+  const reducedTransparencyOverride = testAppearanceOverride(
+    "LOCAL_STATUS_E2E_REDUCED_TRANSPARENCY",
+  );
+  const highContrastOverride = testAppearanceOverride(
+    "LOCAL_STATUS_E2E_HIGH_CONTRAST",
+  );
+  return {
+    colorScheme:
+      colorSchemeOverride === "light" || colorSchemeOverride === "dark"
+        ? colorSchemeOverride
+        : nativeTheme.shouldUseDarkColors
+          ? "dark"
+          : "light",
+    reducedTransparency:
+      reducedTransparencyOverride === null
+        ? nativeTheme.prefersReducedTransparency
+        : reducedTransparencyOverride === "1",
+    highContrast:
+      highContrastOverride === null
+        ? nativeTheme.shouldUseHighContrastColors
+        : highContrastOverride === "1",
+  };
+}
+
+function windowBackground(theme, appearance = systemAppearance()) {
+  const definition = themeManifest[theme] ?? themeManifest.green;
+  const resolvedScheme =
+    definition.colorScheme === "system"
+      ? appearance.colorScheme
+      : definition.colorScheme;
+  return definition.windowBackground[resolvedScheme];
+}
+
+function updateWindowAppearance(theme = settingsStore?.preferences().theme) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.setBackgroundColor(windowBackground(theme ?? "green"));
+}
+
+function broadcastSystemAppearance() {
+  updateWindowAppearance();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("appearance:changed", systemAppearance());
+  }
+}
 
 function configureApplicationIdentity() {
   const appIcon = nativeImage.createFromPath(appIconPath);
@@ -795,11 +852,14 @@ function registerIpc() {
   });
 
   handle("preferences:get", () => settingsStore.preferences());
-  handle("preferences:set-theme", (payload) =>
-    settingsStore.setTheme(
+  handle("preferences:set-theme", async (payload) => {
+    const preferences = await settingsStore.setTheme(
       requireString(requireObject(payload).theme, "theme", 20),
-    ),
-  );
+    );
+    updateWindowAppearance(preferences.theme);
+    return preferences;
+  });
+  handle("appearance:get", () => systemAppearance());
 
   handle("ai:status", () => aiRunner.status());
   handle("ai:set-preferences", (payload) => {
@@ -957,6 +1017,7 @@ async function registerRendererProtocol() {
 }
 
 async function createWindow() {
+  const appearance = systemAppearance();
   mainWindow = new BrowserWindow({
     title: "Local Status",
     icon: appIconPath,
@@ -964,7 +1025,10 @@ async function createWindow() {
     height: 900,
     minWidth: 820,
     minHeight: 620,
-    backgroundColor: "#09110f",
+    backgroundColor: windowBackground(
+      settingsStore?.preferences().theme ?? "green",
+      appearance,
+    ),
     show: false,
     webPreferences: {
       preload: preloadPath,
@@ -995,6 +1059,7 @@ async function createWindow() {
 
 async function startApplication() {
   await app.whenReady();
+  nativeTheme.on("updated", broadcastSystemAppearance);
   configureApplicationIdentity();
   if (!developmentUrl) await registerRendererProtocol();
   settingsStore = new SettingsStore(join(app.getPath("userData"), "settings.json"));

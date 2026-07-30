@@ -1,6 +1,6 @@
-import type { Theme } from "./theme";
+import type { SystemAppearance, Theme } from "./theme";
 
-export type { Theme } from "./theme";
+export type { ResolvedColorScheme, SystemAppearance, Theme } from "./theme";
 
 export type ChangeScope =
   | "conflict"
@@ -454,6 +454,11 @@ export interface LocalStatusBridge {
   preferences: {
     get(): Promise<Preferences>;
     setTheme(theme: Theme): Promise<Preferences>;
+  };
+  appearance?: {
+    get(): Promise<SystemAppearance>;
+    onChange(callback: (appearance: SystemAppearance) => void): void;
+    offChange(callback: (appearance: SystemAppearance) => void): void;
   };
   shortcuts: {
     onRequest(callback: (shortcut: AppShortcut) => void): void;

@@ -13,7 +13,12 @@ import {
 } from "react";
 import { api } from "../api";
 import { TERMINAL_THEMES } from "../terminal-themes";
-import type { TerminalEvent, TerminalSession, Theme } from "../types";
+import type {
+  ResolvedColorScheme,
+  TerminalEvent,
+  TerminalSession,
+  Theme,
+} from "../types";
 
 export interface TerminalPaneHandle {
   focus: () => void;
@@ -25,10 +30,17 @@ export const TerminalPane = forwardRef<
     session: TerminalSession;
     autoFocus?: boolean;
     theme?: Theme;
+    colorScheme?: ResolvedColorScheme;
     findRequest?: number;
   }
 >(function TerminalPane(
-  { session, autoFocus = false, theme = "green", findRequest = 0 },
+  {
+    session,
+    autoFocus = false,
+    theme = "green",
+    colorScheme = "dark",
+    findRequest = 0,
+  },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -55,7 +67,7 @@ export const TerminalPane = forwardRef<
       fontSize: 14,
       lineHeight: 1.25,
       scrollback: 10_000,
-      theme: TERMINAL_THEMES[theme],
+      theme: TERMINAL_THEMES[theme][colorScheme],
     });
     const fit = new FitAddon();
     const search = new SearchAddon();
@@ -102,7 +114,14 @@ export const TerminalPane = forwardRef<
       terminalRef.current = null;
       searchAddonRef.current = null;
     };
-  }, [autoFocus, session.id, session.buffer, session.truncated, theme]);
+  }, [
+    autoFocus,
+    colorScheme,
+    session.id,
+    session.buffer,
+    session.truncated,
+    theme,
+  ]);
 
   useEffect(() => {
     if (!findRequest) return;

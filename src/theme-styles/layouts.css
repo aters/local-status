@@ -1,5 +1,5 @@
 .theme-grid {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
 }
 
 .settings-heading,
@@ -7,20 +7,20 @@
   width: min(1180px, 100%);
 }
 
-:root:is([data-layout="floating"], [data-layout="sculpted"]) .app-shell {
+:root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"]) .app-shell {
   gap: 10px;
   padding: 10px;
   background: transparent;
 }
 
-:root:is([data-layout="floating"], [data-layout="sculpted"]) .app-header {
+:root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"]) .app-header {
   height: 56px;
   flex-basis: 56px;
   border: 1px solid var(--material-border);
   border-radius: var(--material-radius-panel);
 }
 
-:root:is([data-layout="floating"], [data-layout="sculpted"])
+:root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"])
   :where(
     .workspace-overview,
     .repo-panel,
@@ -38,24 +38,24 @@
   border-radius: var(--material-radius-panel);
 }
 
-:root:is([data-layout="floating"], [data-layout="sculpted"])
+:root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"])
   :where(.repository-workspace, .services-workspace, .pull-requests-workspace) {
   gap: 10px;
   background: transparent;
 }
 
-:root:is([data-layout="floating"], [data-layout="sculpted"]) .workspace-panels {
+:root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"]) .workspace-panels {
   gap: 8px;
   background: transparent;
 }
 
-:root:is([data-layout="floating"], [data-layout="sculpted"]) .resize-handle {
+:root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"]) .resize-handle {
   overflow: visible;
   border-radius: 999px;
   background: transparent;
 }
 
-:root:is([data-layout="floating"], [data-layout="sculpted"])
+:root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"])
   .resize-handle::before {
   position: absolute;
   top: 10px;
@@ -67,25 +67,25 @@
   content: "";
 }
 
-:root:is([data-layout="floating"], [data-layout="sculpted"])
+:root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"])
   .resize-handle:hover::before,
-:root:is([data-layout="floating"], [data-layout="sculpted"])
+:root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"])
   body.is-resizing
   .resize-handle::before {
   width: 2px;
   background: var(--green-deep);
 }
 
-:root:is([data-layout="floating"], [data-layout="sculpted"]) .service-layout {
+:root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"]) .service-layout {
   gap: 10px;
 }
 
-:root:is([data-layout="floating"], [data-layout="sculpted"])
+:root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"])
   .pull-requests-content {
   padding-top: 26px;
 }
 
-:root:is([data-layout="floating"], [data-layout="sculpted"]) .settings-page {
+:root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"]) .settings-page {
   border-radius: var(--material-radius-panel);
   background: transparent;
 }
@@ -104,6 +104,68 @@
 
 :root[data-layout="floating"] .pull-request-sections {
   gap: 16px;
+}
+
+/* Immersive layouts place glass navigation over an expansive content canvas. */
+
+:root[data-layout="immersive"] .app-shell {
+  gap: 12px;
+  padding: 12px;
+}
+
+:root[data-layout="immersive"] .app-header {
+  height: 60px;
+  flex-basis: 60px;
+  padding-right: 10px;
+  padding-left: 10px;
+  border-radius: 30px;
+}
+
+:root[data-layout="immersive"]
+  :where(.repository-workspace, .services-workspace, .pull-requests-workspace) {
+  gap: 12px;
+}
+
+:root[data-layout="immersive"] .workspace-overview {
+  min-height: 78px;
+  border-radius: 24px;
+}
+
+:root[data-layout="immersive"] .workspace-panels {
+  grid-template-columns:
+    var(--repo-panel-width) 5px var(--context-panel-width) 5px
+    minmax(320px, 1fr);
+  gap: 7px;
+}
+
+:root[data-layout="immersive"]
+  :where(.repo-panel, .context-panel, .viewer-panel) {
+  border-radius: 22px;
+}
+
+:root[data-layout="immersive"] .repo-panel {
+  border-radius: 26px;
+}
+
+:root[data-layout="immersive"] .context-tabs,
+:root[data-layout="immersive"] .filter-strip {
+  border-radius: 999px;
+}
+
+:root[data-layout="immersive"] .service-layout {
+  gap: 12px;
+}
+
+:root[data-layout="immersive"] .pull-request-sections {
+  gap: 18px;
+}
+
+:root[data-layout="immersive"] .settings-section {
+  border-radius: 24px;
+}
+
+:root[data-layout="immersive"] .workspace-menu {
+  top: calc(100% + 14px);
 }
 
 /* Sculpted layouts place inset work areas inside a single raised console. */
@@ -144,12 +206,12 @@
 }
 
 @media (max-width: 1180px) {
-  :root:is([data-layout="floating"], [data-layout="sculpted"])
+  :root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"])
     .workspace-panels {
     grid-template-columns: var(--context-panel-width) 4px minmax(320px, 1fr);
   }
 
-  :root:is([data-layout="floating"], [data-layout="sculpted"]) .repo-panel {
+  :root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"]) .repo-panel {
     top: 76px;
     bottom: 10px;
     left: 10px;
@@ -162,15 +224,21 @@
     bottom: 20px;
     left: 20px;
   }
+
+  :root[data-layout="immersive"] .repo-panel {
+    top: 82px;
+    bottom: 12px;
+    left: 12px;
+  }
 }
 
 @media (max-width: 860px) {
-  :root:is([data-layout="floating"], [data-layout="sculpted"]) .app-shell {
+  :root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"]) .app-shell {
     gap: 8px;
     padding: 8px;
   }
 
-  :root:is([data-layout="floating"], [data-layout="sculpted"]) .repo-panel {
+  :root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"]) .repo-panel {
     top: 72px;
     bottom: 8px;
     left: 8px;
@@ -187,19 +255,35 @@
     left: 16px;
   }
 
-  :root:is([data-layout="floating"], [data-layout="sculpted"])
+  :root[data-layout="immersive"] .app-shell {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  :root[data-layout="immersive"] .app-header {
+    height: 56px;
+    flex-basis: 56px;
+  }
+
+  :root[data-layout="immersive"] .repo-panel {
+    top: 72px;
+    bottom: 8px;
+    left: 8px;
+  }
+
+  :root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"])
     .workspace-panels {
     grid-template-columns: minmax(250px, 40vw) 4px minmax(320px, 1fr);
   }
 }
 
 @media (max-width: 640px) {
-  :root:is([data-layout="floating"], [data-layout="sculpted"]) .app-shell {
+  :root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"]) .app-shell {
     gap: 0;
     padding: 0;
   }
 
-  :root:is([data-layout="floating"], [data-layout="sculpted"])
+  :root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"])
     :where(
       .app-header,
       .workspace-overview,
@@ -218,7 +302,7 @@
     border-radius: 0;
   }
 
-  :root:is([data-layout="floating"], [data-layout="sculpted"])
+  :root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"])
     :where(.repository-workspace, .services-workspace, .pull-requests-workspace) {
     gap: 0;
     padding: 0;
@@ -227,7 +311,7 @@
     box-shadow: none;
   }
 
-  :root:is([data-layout="floating"], [data-layout="sculpted"])
+  :root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"])
     .workspace-panels {
     display: block;
     padding: 0;
@@ -236,13 +320,13 @@
     box-shadow: none;
   }
 
-  :root:is([data-layout="floating"], [data-layout="sculpted"]) .repo-panel {
+  :root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"]) .repo-panel {
     top: 56px;
     bottom: 0;
     left: 0;
   }
 
-  :root:is([data-layout="floating"], [data-layout="sculpted"]) .service-layout {
+  :root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"]) .service-layout {
     display: grid;
     min-width: 0;
     grid-template-columns: minmax(0, 1fr);
@@ -254,23 +338,23 @@
     box-shadow: none;
   }
 
-  :root:is([data-layout="floating"], [data-layout="sculpted"])
+  :root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"])
     .services-toolbar {
     padding: 11px 12px;
   }
 
-  :root:is([data-layout="floating"], [data-layout="sculpted"])
+  :root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"])
     .service-launcher {
     flex-wrap: wrap;
   }
 
-  :root:is([data-layout="floating"], [data-layout="sculpted"])
+  :root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"])
     .service-launcher
     select {
     flex: 1 1 120px;
   }
 
-  :root:is([data-layout="floating"], [data-layout="sculpted"])
+  :root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"])
     .session-panel {
     min-width: 0;
     border-bottom: 1px solid var(--material-border);
@@ -278,5 +362,9 @@
 
   .theme-grid {
     grid-template-columns: 1fr;
+  }
+
+  :root[data-layout="immersive"] .app-header {
+    border-radius: 0;
   }
 }

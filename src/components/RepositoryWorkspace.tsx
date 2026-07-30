@@ -75,6 +75,7 @@ import type {
   TerminalKind,
   TerminalSession,
   Theme,
+  ResolvedColorScheme,
   WorkspaceFile,
 } from "../types";
 import { AiTerminalModal } from "./AiTerminalModal";
@@ -581,6 +582,7 @@ function RepositoryNavigator({
             : ""
         }`}
         key={repository.id}
+        role="listitem"
       >
         {renaming ? (
           <form
@@ -632,8 +634,7 @@ function RepositoryNavigator({
           <button
             className="repository-row__select"
             type="button"
-            role="option"
-            aria-selected={selected}
+            aria-current={selected ? "true" : undefined}
             aria-disabled={repository.archived}
             disabled={repository.archived}
             onClick={() => {
@@ -716,7 +717,7 @@ function RepositoryNavigator({
     }
 
     return (
-      <section className="repository-group" key={group.id}>
+      <section className="repository-group" key={group.id} role="listitem">
         <div className="repository-group__header">
           <button
             type="button"
@@ -750,7 +751,11 @@ function RepositoryNavigator({
           </span>
         </div>
         {expandedGroups.has(group.id) && (
-          <div className="repository-group__members">
+          <div
+            className="repository-group__members"
+            role="list"
+            aria-label={`${group.name} checkouts`}
+          >
             {group.members.map((repository) => repositoryRow(repository))}
           </div>
         )}
@@ -806,7 +811,7 @@ function RepositoryNavigator({
           </button>
         ))}
       </div>
-      <div className="repository-list" role="listbox" aria-label="Repositories">
+      <div className="repository-list" role="list" aria-label="Repositories">
         {groups.map(repositoryGroup)}
         {!groups.length && !showsArchivedGroups && loading ? (
           <div
@@ -826,7 +831,7 @@ function RepositoryNavigator({
           </div>
         ) : null}
         {showsArchivedGroups && (
-          <section className="archived-repositories">
+          <section className="archived-repositories" role="listitem">
             <button
               className="archived-repositories__toggle"
               type="button"
@@ -854,7 +859,11 @@ function RepositoryNavigator({
               />
             </button>
             {archivedExpanded && (
-              <div className="archived-repositories__list">
+              <div
+                className="archived-repositories__list"
+                role="list"
+                aria-label="Archived repositories"
+              >
                 {archivedGroups.map(repositoryGroup)}
               </div>
             )}
@@ -1474,6 +1483,7 @@ export function RepositoryWorkspace({
   onStartTerminal,
   onStartAiTerminal,
   theme,
+  colorScheme,
   findRequest,
   openFileRequest,
 }: {
@@ -1493,6 +1503,7 @@ export function RepositoryWorkspace({
     executablePath: string | null,
   ) => Promise<TerminalSession>;
   theme: Theme;
+  colorScheme: ResolvedColorScheme;
   findRequest: number;
   openFileRequest: (WorkspaceFile & { requestId: number }) | null;
 }) {
@@ -3295,6 +3306,7 @@ export function RepositoryWorkspace({
                 <MonacoDiff
                   comparison={comparison}
                   theme={theme}
+                  colorScheme={colorScheme}
                   findRequest={viewerFindRequest}
                 />
               </Suspense>
@@ -3513,6 +3525,7 @@ export function RepositoryWorkspace({
           provider={aiTerminal.provider}
           action={aiTerminal.action}
           theme={theme}
+          colorScheme={colorScheme}
           findRequest={findRequest}
           onClose={() => void closeAiTerminal()}
         />

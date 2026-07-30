@@ -20,7 +20,10 @@ import { WorkspaceSwitcher } from "./components/WorkspaceSwitcher";
 import { routeParams, updateRoute } from "./route";
 import {
   applyThemeAttributes,
+  browserSystemAppearance,
+  getThemeDefinition,
   normalizeTheme,
+  resolveColorScheme,
 } from "./theme";
 import type {
   AiProvider,
@@ -30,6 +33,7 @@ import type {
   TerminalKind,
   TerminalSession,
   Theme,
+  SystemAppearance,
   WorkspaceFile,
   WorkspaceState,
 } from "./types";
@@ -137,11 +141,14 @@ function Onboarding({
 
 export function App() {
   const [view, setView] = useState<AppView>(initialView);
+  const [appearance, setAppearance] = useState<SystemAppearance>(
+    browserSystemAppearance,
+  );
   const [theme, setTheme] = useState<Theme>(() => {
     const initial = normalizeTheme(
       window.localStorage.getItem("local-status:theme"),
     );
-    applyThemeAttributes(initial);
+    applyThemeAttributes(initial, appearance);
     return initial;
   });
   const [workspace, setWorkspace] = useState<WorkspaceState | null>(null);
@@ -159,6 +166,7 @@ export function App() {
     (WorkspaceFile & { requestId: number }) | null
   >(null);
   const workspacePath = workspace?.current?.path ?? null;
+  const resolvedColorScheme = resolveColorScheme(theme, appearance);
 
   const refreshRepositories = useCallback(async () => {
     setRepositoryError(null);
@@ -208,8 +216,104 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    applyThemeAttributes(theme);
+    applyThemeAttributes(theme, appearance);
     window.localStorage.setItem("local-status:theme", theme);
+  }, [appearance, theme]);
+
+  useEffect(() => {
+    let active = true;
+    const applyAppearance = (next: SystemAppearance) => {
+      if (active) setAppearance(next);
+    };
+    void api.appearance().then(applyAppearance).catch(() => undefined);
+    api.onAppearanceChange(applyAppearance);
+
+    const mediaQueries = [
+      window.matchMedia?.("(prefers-color-scheme: dark)"),
+      window.matchMedia?.("(prefers-contrast: more)"),
+    ].filter((query): query is MediaQueryList => Boolean(query));
+    const applyBrowserAppearance = () => {
+      setAppearance((current) => ({
+        ...browserSystemAppearance(),
+        reducedTransparency: current.reducedTransparency,
+      }));
+    };
+    for (const query of mediaQueries) {
+      query.addEventListener("change", applyBrowserAppearance);
+    }
+    return () => {
+      active = false;
+      api.offAppearanceChange(applyAppearance);
+      for (const query of mediaQueries) {
+        query.removeEventListener("change", applyBrowserAppearance);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (getThemeDefinition(theme).material !== "liquid-glass") return;
+    const surfaceSelector = [
+      ".app-header",
+      ".app-nav",
+      ".workspace-overview",
+      ".repo-panel",
+      ".context-tabs",
+      ".filter-strip",
+      ".viewer-titlebar",
+      ".diff-toolbar",
+      ".services-toolbar",
+      ".session-panel__header",
+      ".terminal-titlebar",
+      ".pull-requests-toolbar",
+      ".workspace-menu",
+      ".branch-picker",
+      ".repository-run-menu",
+      ".repository-context-menu",
+      ".quick-open",
+      ".commit-modal",
+      ".ai-terminal-modal",
+      ".commit-modal__ai-popover",
+      ".app-tooltip",
+      ".workspace-toast",
+    ].join(",");
+    let activeSurface: HTMLElement | null = null;
+    let frame = 0;
+    let pointerX = 0;
+    let pointerY = 0;
+    const paint = () => {
+      frame = 0;
+      if (!activeSurface) return;
+      const bounds = activeSurface.getBoundingClientRect();
+      activeSurface.style.setProperty(
+        "--liquid-pointer-x",
+        `${pointerX - bounds.left}px`,
+      );
+      activeSurface.style.setProperty(
+        "--liquid-pointer-y",
+        `${pointerY - bounds.top}px`,
+      );
+    };
+    const trackPointer = (event: PointerEvent) => {
+      const target =
+        event.target instanceof Element
+          ? event.target.closest<HTMLElement>(surfaceSelector)
+          : null;
+      if (activeSurface !== target) {
+        activeSurface?.style.removeProperty("--liquid-pointer-x");
+        activeSurface?.style.removeProperty("--liquid-pointer-y");
+        activeSurface = target;
+      }
+      pointerX = event.clientX;
+      pointerY = event.clientY;
+      if (activeSurface && !frame) frame = window.requestAnimationFrame(paint);
+    };
+    document.addEventListener("pointermove", trackPointer, { passive: true });
+    return () => {
+      document.removeEventListener("pointermove", trackPointer);
+      if (frame) window.cancelAnimationFrame(frame);
+      activeSurface?.style.removeProperty("--liquid-pointer-x");
+      activeSurface?.style.removeProperty("--liquid-pointer-y");
+    };
   }, [theme]);
 
   useEffect(() => {
@@ -476,6 +580,7 @@ export function App() {
           onStartTerminal={startTerminal}
           onStartAiTerminal={startAiTerminal}
           theme={theme}
+          colorScheme={resolvedColorScheme}
           findRequest={findRequest}
           openFileRequest={openFileRequest}
         />
@@ -498,6 +603,7 @@ export function App() {
           }}
           onStartTerminal={startTerminal}
           theme={theme}
+          colorScheme={resolvedColorScheme}
           findRequest={findRequest}
         />
       ) : (

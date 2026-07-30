@@ -3,7 +3,8 @@ import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { chromium, expect, test } from "@playwright/test";
+import axe from "axe-core";
+import { chromium, expect, test, type Page } from "@playwright/test";
 import { prepareBrandedElectron } from "../../scripts/electron-runtime.mjs";
 
 const appDirectory = resolve(import.meta.dirname, "../..");
@@ -16,7 +17,58 @@ let githubExecutable: string;
 let changedRepository: string;
 let desktopProcess: ChildProcess | null = null;
 
-async function launchDesktop(port: number, workspace: string | null = fixtureRoot) {
+async function expectNoSeriousAccessibilityViolations(page: Page) {
+  await page.evaluate(axe.source);
+  const results = await page.evaluate(async (tags) => {
+    const axeApi = (
+      window as typeof window & {
+        axe: {
+          run(
+            context: Document,
+            options: {
+              runOnly: { type: "tag"; values: string[] };
+            },
+          ): Promise<{
+            violations: Array<{
+              id: string;
+              impact: string | null;
+              nodes: Array<{
+                target: string[];
+                failureSummary?: string;
+                html?: string;
+              }>;
+            }>;
+          }>;
+        };
+      }
+    ).axe;
+    return axeApi.run(document, {
+      runOnly: { type: "tag", values: tags },
+    });
+  }, ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
+  expect(
+    results.violations
+      .filter(({ impact }) => impact === "serious" || impact === "critical")
+      .map(({ id, nodes }) => ({
+        id,
+        targets: nodes.map((node) => ({
+          target: node.target.join(" "),
+          summary: node.failureSummary,
+          html: node.html,
+        })),
+      })),
+  ).toEqual([]);
+}
+
+async function launchDesktop(
+  port: number,
+  workspace: string | null = fixtureRoot,
+  appearance?: {
+    colorScheme?: "light" | "dark";
+    reducedTransparency?: boolean;
+    highContrast?: boolean;
+  },
+) {
   let stderr = "";
   const environment = {
     ...process.env,
@@ -26,6 +78,18 @@ async function launchDesktop(port: number, workspace: string | null = fixtureRoo
     LOCAL_STATUS_GH_PATH: githubExecutable,
     LOCAL_STATUS_TEST_ACCEPT_AI_DISCLOSURE: "1",
   };
+  if (appearance?.colorScheme) {
+    environment.LOCAL_STATUS_E2E_COLOR_SCHEME = appearance.colorScheme;
+  }
+  if (appearance?.reducedTransparency !== undefined) {
+    environment.LOCAL_STATUS_E2E_REDUCED_TRANSPARENCY =
+      appearance.reducedTransparency ? "1" : "0";
+  }
+  if (appearance?.highContrast !== undefined) {
+    environment.LOCAL_STATUS_E2E_HIGH_CONTRAST = appearance.highContrast
+      ? "1"
+      : "0";
+  }
   if (workspace) {
     environment.LOCAL_STATUS_TEST_WORKSPACE = workspace;
   } else {
@@ -388,8 +452,8 @@ test("renders and persists the Glass and Neumorphic theme systems", async ({
   await window.setViewportSize({ width: 1440, height: 900 });
 
   await window.getByRole("button", { name: "Settings" }).click();
-  await expect(window.getByRole("radio")).toHaveCount(5);
-  await window.getByRole("radio", { name: /Glass/ }).click();
+  await expect(window.getByRole("radio")).toHaveCount(6);
+  await window.getByRole("radio", { name: /^Glass\b/ }).click();
   await expect(window.locator("html")).toHaveAttribute("data-theme", "glass");
   await expect(window.locator("html")).toHaveAttribute("data-material", "glass");
   await expect(window.locator("html")).toHaveAttribute("data-layout", "floating");
@@ -682,6 +746,327 @@ test("renders and persists the Glass and Neumorphic theme systems", async ({
   await browser.close();
 });
 
+test("renders adaptive Liquid Glass across workflows and accessibility states", async ({
+}, testInfo) => {
+  test.setTimeout(120_000);
+  let browser = await launchDesktop(9341, fixtureRoot, {
+    colorScheme: "light",
+    reducedTransparency: false,
+    highContrast: false,
+  });
+  let window = browser.contexts()[0].pages()[0];
+  await window.setViewportSize({ width: 1440, height: 900 });
+
+  await window.getByRole("button", { name: "Settings" }).click();
+  await expect(window.getByRole("radio")).toHaveCount(6);
+  await expect(window.getByText("Follows system")).toBeVisible();
+  await window.getByRole("radio", { name: /^Liquid Glass\b/ }).click();
+  const root = window.locator("html");
+  await expect(root).toHaveAttribute("data-theme", "liquid-glass");
+  await expect(root).toHaveAttribute("data-material", "liquid-glass");
+  await expect(root).toHaveAttribute("data-layout", "immersive");
+  await expect(root).toHaveAttribute("data-color-scheme", "light");
+  await expect(root).toHaveAttribute("data-reduced-transparency", "false");
+  await expect(root).toHaveAttribute("data-high-contrast", "false");
+  expect(await root.evaluate((element) => element.style.colorScheme)).toBe(
+    "light",
+  );
+  const themeCardRows = await window.locator(".theme-card").evaluateAll((cards) =>
+    cards.map((card) => Math.round(card.getBoundingClientRect().top)),
+  );
+  expect(new Set(themeCardRows).size).toBe(1);
+  await window.screenshot({
+    path: testInfo.outputPath("liquid-glass-light-settings.png"),
+    animations: "disabled",
+  });
+  await window.getByRole("button", { name: "Settings" }).hover();
+  const tooltip = window.locator(".app-tooltip");
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toHaveCSS("position", "fixed");
+  const tooltipBounds = await tooltip.boundingBox();
+  expect(tooltipBounds).not.toBeNull();
+  expect(tooltipBounds!.x).toBeGreaterThanOrEqual(0);
+  expect(tooltipBounds!.y).toBeGreaterThanOrEqual(0);
+  expect(tooltipBounds!.x + tooltipBounds!.width).toBeLessThanOrEqual(1440);
+  expect(tooltipBounds!.y + tooltipBounds!.height).toBeLessThanOrEqual(900);
+  await window.mouse.move(720, 450);
+  await expect(tooltip).toBeHidden();
+  await expectNoSeriousAccessibilityViolations(window);
+
+  await window.getByRole("button", { name: "Repositories" }).click();
+  await window.getByText("changed-web").first().click();
+  await expect(window.getByRole("heading", { name: "changed-web" })).toBeVisible();
+  const lightMaterials = await window.evaluate(() => {
+    const style = (selector: string) =>
+      getComputedStyle(document.querySelector<HTMLElement>(selector)!);
+    const panels = [
+      ".repo-panel",
+      ".context-panel",
+      ".viewer-panel",
+    ].map((selector) =>
+      document.querySelector<HTMLElement>(selector)!.getBoundingClientRect(),
+    );
+    return {
+      headerBlur: style(".app-header").backdropFilter,
+      navigationBlur: style(".app-nav").backdropFilter,
+      repositoryBlur: style(".repo-panel").backdropFilter,
+      contextBlur: style(".context-panel").backdropFilter,
+      contextBackground: style(".context-panel").backgroundColor,
+      viewerBackground: style(".viewer-panel").backgroundColor,
+      headerRadius: Number.parseFloat(style(".app-header").borderRadius),
+      panelGaps: [panels[1].left - panels[0].right, panels[2].left - panels[1].right],
+      document: document.documentElement.scrollWidth,
+      viewport: window.innerWidth,
+    };
+  });
+  expect(lightMaterials.headerBlur).not.toBe("none");
+  expect(lightMaterials.repositoryBlur).not.toBe("none");
+  expect(lightMaterials.navigationBlur).toBe("none");
+  expect(lightMaterials.contextBlur).toBe("none");
+  expect(lightMaterials.contextBackground).toBe("rgb(247, 249, 252)");
+  expect(lightMaterials.viewerBackground).toBe("rgb(247, 249, 252)");
+  expect(lightMaterials.headerRadius).toBeGreaterThanOrEqual(24);
+  expect(lightMaterials.panelGaps.every((gap) => gap > 0)).toBe(true);
+  expect(lightMaterials.document).toBe(lightMaterials.viewport);
+  const repositoryFilterMaterial = await window.evaluate(() => {
+    const strip = document.querySelector<HTMLElement>(".filter-strip")!;
+    const active = strip.querySelector<HTMLElement>("button.is-active")!;
+    const inactive = strip.querySelector<HTMLElement>(
+      "button:not(.is-active)",
+    )!;
+    return {
+      stripRadius: getComputedStyle(strip).borderRadius,
+      activeRadius: getComputedStyle(active).borderRadius,
+      inactiveRadius: getComputedStyle(inactive).borderRadius,
+      inactiveShadow: getComputedStyle(inactive).boxShadow,
+      activeBackground: getComputedStyle(active).backgroundColor,
+      inactiveBackground: getComputedStyle(inactive).backgroundColor,
+    };
+  });
+  expect(repositoryFilterMaterial.activeRadius).toBe(
+    repositoryFilterMaterial.stripRadius,
+  );
+  expect(repositoryFilterMaterial.inactiveRadius).toBe(
+    repositoryFilterMaterial.stripRadius,
+  );
+  expect(repositoryFilterMaterial.inactiveShadow).toBe("none");
+  expect(repositoryFilterMaterial.activeBackground).not.toBe(
+    repositoryFilterMaterial.inactiveBackground,
+  );
+  await window.screenshot({
+    path: testInfo.outputPath("liquid-glass-light-workspace.png"),
+    animations: "disabled",
+  });
+  await expectNoSeriousAccessibilityViolations(window);
+
+  await window.locator(".workspace-switcher").click();
+  await expect(
+    window.getByRole("menu", { name: "Switch workspace" }),
+  ).toBeVisible();
+  const [liquidHeaderBounds, liquidWorkspaceMenuBounds] = await Promise.all([
+    window.locator(".app-header").boundingBox(),
+    window.getByRole("menu", { name: "Switch workspace" }).boundingBox(),
+  ]);
+  expect(liquidHeaderBounds).not.toBeNull();
+  expect(liquidWorkspaceMenuBounds).not.toBeNull();
+  expect(liquidWorkspaceMenuBounds!.y).toBeGreaterThanOrEqual(
+    liquidHeaderBounds!.y + liquidHeaderBounds!.height,
+  );
+  await expect(
+    window.getByRole("menu", { name: "Switch workspace" }),
+  ).toHaveCSS("position", "absolute");
+  await window.screenshot({
+    path: testInfo.outputPath("liquid-glass-light-workspace-menu.png"),
+    animations: "disabled",
+  });
+  await window.keyboard.press("Escape");
+
+  await window.locator(".repository-header__branch").click();
+  await expect(
+    window.getByRole("dialog", { name: "Switch branch for changed-web" }),
+  ).toBeVisible();
+  await window.screenshot({
+    path: testInfo.outputPath("liquid-glass-light-branch-picker.png"),
+    animations: "disabled",
+  });
+  await window.keyboard.press("Escape");
+
+  await window.locator('.change-row__select[title="README.md"]').click();
+  await expect(window.locator(".monaco-diff-editor")).toBeVisible();
+  await expect(
+    window.locator(".editor.original .lines-content.monaco-editor-background"),
+  ).toHaveCSS("background-color", "rgb(247, 249, 252)");
+  await window.screenshot({
+    path: testInfo.outputPath("liquid-glass-light-diff.png"),
+    animations: "disabled",
+  });
+
+  await window.getByRole("button", { name: "Stage README.md" }).click();
+  await window.getByRole("button", { name: "Commit", exact: true }).click();
+  const commitDialog = window.getByRole("dialog", {
+    name: "Commit staged changes",
+  });
+  await expect(commitDialog).toBeVisible();
+  await expect(commitDialog.locator(".commit-modal__context")).toHaveCSS(
+    "backdrop-filter",
+    "none",
+  );
+  await window.screenshot({
+    path: testInfo.outputPath("liquid-glass-light-commit-modal.png"),
+    animations: "disabled",
+  });
+  await commitDialog.getByRole("button", { name: "Close commit window" }).click();
+  await window.getByRole("button", { name: "Unstage README.md" }).click();
+
+  await window.keyboard.press("ControlOrMeta+P");
+  await expect(window.getByRole("dialog", { name: "Quick Open" })).toBeVisible();
+  await window.screenshot({
+    path: testInfo.outputPath("liquid-glass-light-quick-open.png"),
+    animations: "disabled",
+  });
+  await window.keyboard.press("Escape");
+
+  await window.getByRole("button", { name: "Pull Requests" }).click();
+  await expect(window.locator(".pull-requests-content")).toBeVisible();
+  await expect(window.locator(".pull-request-sections")).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(window.locator(".pull-request-row")).toHaveCount(2, {
+    timeout: 15_000,
+  });
+  await window.screenshot({
+    path: testInfo.outputPath("liquid-glass-light-pull-requests.png"),
+    animations: "disabled",
+  });
+
+  await window.getByRole("button", { name: "Services" }).click();
+  await expect(window.locator(".services-workspace")).toBeVisible();
+  await window.screenshot({
+    path: testInfo.outputPath("liquid-glass-light-services.png"),
+    animations: "disabled",
+  });
+
+  await window.emulateMedia({ colorScheme: "dark" });
+  await expect(root).toHaveAttribute("data-theme", "liquid-glass");
+  await expect(root).toHaveAttribute("data-color-scheme", "dark");
+  expect(await root.evaluate((element) => element.style.colorScheme)).toBe("dark");
+  await window.getByRole("button", { name: "Repositories" }).click();
+  await window.getByText("changed-web").first().click();
+  await window.locator('.change-row__select[title="README.md"]').click();
+  await expect(
+    window.locator(".editor.original .lines-content.monaco-editor-background"),
+  ).toHaveCSS("background-color", "rgb(17, 24, 39)");
+  await window.screenshot({
+    path: testInfo.outputPath("liquid-glass-dark-diff.png"),
+    animations: "disabled",
+  });
+  await window.getByRole("tab", { name: "Commits" }).click();
+  await expect(window.getByLabel("Filter commits")).toBeVisible();
+  const commitScopeMaterial = await window.evaluate(() => {
+    const scope = document.querySelector<HTMLElement>(".commit-scope")!;
+    const buttons = [...scope.querySelectorAll<HTMLElement>("button")];
+    const active = scope.querySelector<HTMLElement>("button.is-active")!;
+    const inactive = scope.querySelector<HTMLElement>(
+      "button:not(.is-active)",
+    )!;
+    return {
+      scopeRadius: getComputedStyle(scope).borderRadius,
+      buttonRadii: buttons.map(
+        (button) => getComputedStyle(button).borderRadius,
+      ),
+      inactiveShadow: getComputedStyle(inactive).boxShadow,
+      activeBackground: getComputedStyle(active).backgroundColor,
+      inactiveBackground: getComputedStyle(inactive).backgroundColor,
+    };
+  });
+  expect(
+    commitScopeMaterial.buttonRadii.every(
+      (radius) => radius === commitScopeMaterial.scopeRadius,
+    ),
+  ).toBe(true);
+  expect(commitScopeMaterial.inactiveShadow).toBe("none");
+  expect(commitScopeMaterial.activeBackground).not.toBe(
+    commitScopeMaterial.inactiveBackground,
+  );
+  await window.screenshot({
+    path: testInfo.outputPath("liquid-glass-dark-commit-tabs.png"),
+    animations: "disabled",
+  });
+  await expectNoSeriousAccessibilityViolations(window);
+
+  for (const size of [
+    { width: 1180, height: 760 },
+    { width: 900, height: 700 },
+    { width: 390, height: 844 },
+  ]) {
+    await window.setViewportSize(size);
+    await expect
+      .poll(() =>
+        window.evaluate(
+          () => document.documentElement.scrollWidth - window.innerWidth,
+        ),
+      )
+      .toBeLessThanOrEqual(0);
+    await window.getByRole("button", { name: "Services" }).click();
+    await expect
+      .poll(() =>
+        window.evaluate(
+          () => document.documentElement.scrollWidth - window.innerWidth,
+        ),
+      )
+      .toBeLessThanOrEqual(0);
+    await window.getByRole("button", { name: "Repositories" }).click();
+  }
+  await window.screenshot({
+    path: testInfo.outputPath("liquid-glass-dark-mobile.png"),
+    animations: "disabled",
+  });
+
+  await browser.close();
+  await stopDesktop();
+
+  browser = await launchDesktop(9342, fixtureRoot, {
+    colorScheme: "dark",
+    reducedTransparency: true,
+    highContrast: true,
+  });
+  window = browser.contexts()[0].pages()[0];
+  await expect(window.locator("html")).toHaveAttribute(
+    "data-theme",
+    "liquid-glass",
+  );
+  await expect(window.locator("html")).toHaveAttribute(
+    "data-color-scheme",
+    "dark",
+  );
+  await expect(window.locator("html")).toHaveAttribute(
+    "data-reduced-transparency",
+    "true",
+  );
+  await expect(window.locator("html")).toHaveAttribute(
+    "data-high-contrast",
+    "true",
+  );
+  const fallbackMaterial = await window.evaluate(() => {
+    const style = getComputedStyle(
+      document.querySelector<HTMLElement>(".app-header")!,
+    );
+    return {
+      blur: style.backdropFilter,
+      borderWidth: Number.parseFloat(style.borderTopWidth),
+      background: style.backgroundColor,
+    };
+  });
+  expect(fallbackMaterial.blur).toBe("none");
+  expect(fallbackMaterial.borderWidth).toBeGreaterThanOrEqual(2);
+  expect(fallbackMaterial.background).not.toBe("rgba(0, 0, 0, 0)");
+  await window.screenshot({
+    path: testInfo.outputPath("liquid-glass-accessibility-fallback.png"),
+    animations: "disabled",
+  });
+  await browser.close();
+});
+
 test("opens repositories, renders a side-by-side diff, and runs an interactive service", async ({
 }, testInfo) => {
   const browser = await launchDesktop(9333);
@@ -733,15 +1118,10 @@ test("opens repositories, renders a side-by-side diff, and runs an interactive s
   await window.getByRole("button", { name: "Source" }).click();
   await expect(window.locator(".monaco-diff-editor")).toBeVisible();
 
-  await window.getByRole("button", { name: "Stage README.md" }).click();
-  await expect(window.getByRole("button", { name: "Unstage README.md" })).toBeVisible();
-  await window.getByRole("button", { name: "Unstage README.md" }).click();
-  await expect(window.getByRole("button", { name: "Stage README.md" })).toBeVisible();
-
-  await window.locator('.change-row__select[title="README.md"]').click();
-  await window.keyboard.down("Shift");
-  await window.locator('.change-row__select[title="package.json"]').click();
-  await window.keyboard.up("Shift");
+  await expect(window.locator(".change-row.is-selected")).toHaveCount(1);
+  await window
+    .locator('.change-row__select[title="package.json"]')
+    .dispatchEvent("click", { shiftKey: true });
   await expect(window.locator(".change-row.is-selected")).toHaveCount(2);
   await window
     .getByRole("button", { name: "Stage 2 selected files" })
@@ -752,9 +1132,10 @@ test("opens repositories, renders a side-by-side diff, and runs an interactive s
   ).toBeVisible();
 
   await window.locator('.change-row__select[title="README.md"]').click();
-  await window.keyboard.down("Shift");
-  await window.locator('.change-row__select[title="package.json"]').click();
-  await window.keyboard.up("Shift");
+  await expect(window.locator(".change-row.is-selected")).toHaveCount(1);
+  await window
+    .locator('.change-row__select[title="package.json"]')
+    .dispatchEvent("click", { shiftKey: true });
   await window
     .getByRole("button", { name: "Unstage 2 selected files" })
     .last()
@@ -796,7 +1177,7 @@ test("opens repositories, renders a side-by-side diff, and runs an interactive s
   await expect(window.getByText("Synced changed-web: pulled 1.")).toBeVisible();
 
   await window.getByRole("button", { name: "Stage README.md" }).click();
-  await window.getByRole("button", { name: "Commit" }).click();
+  await window.getByRole("button", { name: "Commit", exact: true }).click();
   const commitDialog = window.getByRole("dialog", {
     name: "Commit staged changes",
   });

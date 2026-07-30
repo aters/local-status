@@ -16,7 +16,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MONACO_THEMES } from "../editor-themes";
 import "../monaco";
-import type { Comparison, Theme } from "../types";
+import type { Comparison, ResolvedColorScheme, Theme } from "../types";
 
 type DiffEditorInstance = editor.IStandaloneDiffEditor;
 
@@ -46,10 +46,12 @@ function loadBoolean(key: string, fallback: boolean) {
 export default function MonacoDiff({
   comparison,
   theme = "green",
+  colorScheme = "dark",
   findRequest = 0,
 }: {
   comparison: Comparison;
   theme?: Theme;
+  colorScheme?: ResolvedColorScheme;
   findRequest?: number;
 }) {
   const editorRef = useRef<DiffEditorInstance | null>(null);
@@ -492,13 +494,15 @@ export default function MonacoDiff({
           modifiedModelPath={`inmemory://local-status/${encodeURIComponent(comparison.repositoryId)}/${encodeURIComponent(comparison.modified.source)}/${encodeURIComponent(comparison.path)}`}
           original={comparison.original.content}
           modified={comparison.modified.content}
-          theme={`local-status-${theme}`}
+          theme={`local-status-${theme}-${colorScheme}`}
           beforeMount={(monacoInstance) => {
-            for (const [themeId, definition] of Object.entries(MONACO_THEMES)) {
-              monacoInstance.editor.defineTheme(
-                `local-status-${themeId}`,
-                definition,
-              );
+            for (const [themeId, definitions] of Object.entries(MONACO_THEMES)) {
+              for (const [scheme, definition] of Object.entries(definitions)) {
+                monacoInstance.editor.defineTheme(
+                  `local-status-${themeId}-${scheme}`,
+                  definition,
+                );
+              }
             }
           }}
           onMount={(instance) => {

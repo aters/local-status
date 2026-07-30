@@ -1,9 +1,16 @@
 import manifest from "../shared/themes.json";
 
 export type Theme = keyof typeof manifest;
-export type ThemeMaterial = "flat" | "glass" | "neumorphic";
-export type ThemeLayout = "edge" | "floating" | "sculpted";
-export type ThemeColorScheme = "light" | "dark";
+export type ThemeMaterial = "flat" | "glass" | "neumorphic" | "liquid-glass";
+export type ThemeLayout = "edge" | "floating" | "sculpted" | "immersive";
+export type ResolvedColorScheme = "light" | "dark";
+export type ThemeColorScheme = ResolvedColorScheme | "system";
+
+export interface SystemAppearance {
+  colorScheme: ResolvedColorScheme;
+  reducedTransparency: boolean;
+  highContrast: boolean;
+}
 
 export interface ThemeDefinition {
   id: Theme;
@@ -12,6 +19,7 @@ export interface ThemeDefinition {
   colorScheme: ThemeColorScheme;
   material: ThemeMaterial;
   layout: ThemeLayout;
+  windowBackground: Record<ResolvedColorScheme, string>;
 }
 
 export const DEFAULT_THEME: Theme = "green";
@@ -35,13 +43,38 @@ export function getThemeDefinition(theme: Theme): ThemeDefinition {
   return THEME_DEFINITIONS[theme];
 }
 
+export function browserSystemAppearance(): SystemAppearance {
+  const matches = (query: string) =>
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia(query).matches;
+  return {
+    colorScheme: matches("(prefers-color-scheme: dark)") ? "dark" : "light",
+    reducedTransparency: false,
+    highContrast: matches("(prefers-contrast: more)"),
+  };
+}
+
+export function resolveColorScheme(
+  theme: Theme,
+  appearance: SystemAppearance,
+): ResolvedColorScheme {
+  const configured = getThemeDefinition(theme).colorScheme;
+  return configured === "system" ? appearance.colorScheme : configured;
+}
+
 export function applyThemeAttributes(
   theme: Theme,
+  appearance: SystemAppearance = browserSystemAppearance(),
   root: HTMLElement = document.documentElement,
 ) {
   const definition = getThemeDefinition(theme);
+  const colorScheme = resolveColorScheme(theme, appearance);
   root.dataset.theme = theme;
   root.dataset.material = definition.material;
   root.dataset.layout = definition.layout;
-  root.style.colorScheme = definition.colorScheme;
+  root.dataset.colorScheme = colorScheme;
+  root.dataset.reducedTransparency = String(appearance.reducedTransparency);
+  root.dataset.highContrast = String(appearance.highContrast);
+  root.style.colorScheme = colorScheme;
 }

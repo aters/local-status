@@ -37,11 +37,14 @@ describe("SettingsStore", () => {
     await expect(store.setTheme("neumorphic")).resolves.toEqual({
       theme: "neumorphic",
     });
+    await expect(store.setTheme("liquid-glass")).resolves.toEqual({
+      theme: "liquid-glass",
+    });
     await expect(store.setTheme("unknown")).rejects.toThrow("Invalid theme.");
 
     const restored = new SettingsStore(settingsPath);
     await restored.load();
-    expect(restored.preferences()).toEqual({ theme: "neumorphic" });
+    expect(restored.preferences()).toEqual({ theme: "liquid-glass" });
   });
 
   it("falls back to Green when a saved theme is unknown", async () => {

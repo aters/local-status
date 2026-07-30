@@ -5,7 +5,11 @@
     "description": "The original Local Status palette.",
     "colorScheme": "dark",
     "material": "flat",
-    "layout": "edge"
+    "layout": "edge",
+    "windowBackground": {
+      "light": "#09110f",
+      "dark": "#09110f"
+    }
   },
   "dark": {
     "id": "dark",
@@ -13,7 +17,11 @@
     "description": "Neutral charcoal surfaces with soft contrast.",
     "colorScheme": "dark",
     "material": "flat",
-    "layout": "edge"
+    "layout": "edge",
+    "windowBackground": {
+      "light": "#171717",
+      "dark": "#171717"
+    }
   },
   "light": {
     "id": "light",
@@ -21,7 +29,11 @@
     "description": "Bright surfaces for daylight environments.",
     "colorScheme": "light",
     "material": "flat",
-    "layout": "edge"
+    "layout": "edge",
+    "windowBackground": {
+      "light": "#f7f8f5",
+      "dark": "#f7f8f5"
+    }
   },
   "glass": {
     "id": "glass",
@@ -29,7 +41,11 @@
     "description": "Floating aurora glass with crisp translucent layers.",
     "colorScheme": "dark",
     "material": "glass",
-    "layout": "floating"
+    "layout": "floating",
+    "windowBackground": {
+      "light": "#07111c",
+      "dark": "#07111c"
+    }
   },
   "neumorphic": {
     "id": "neumorphic",
@@ -37,6 +53,22 @@
     "description": "A sculpted dark workspace with tactile depth.",
     "colorScheme": "dark",
     "material": "neumorphic",
-    "layout": "sculpted"
+    "layout": "sculpted",
+    "windowBackground": {
+      "light": "#14212b",
+      "dark": "#14212b"
+    }
+  },
+  "liquid-glass": {
+    "id": "liquid-glass",
+    "label": "Liquid Glass",
+    "description": "Adaptive optical controls over a focused content canvas.",
+    "colorScheme": "system",
+    "material": "liquid-glass",
+    "layout": "immersive",
+    "windowBackground": {
+      "light": "#e7edf5",
+      "dark": "#0b1018"
+    }
   }
 }

@@ -1,4 +1,4 @@
-import { Check, Layers3, Leaf, Moon, Sparkles, Sun } from "lucide-react";
+import { Check, Layers3, Leaf, Moon, Sparkles, Sun, Waves } from "lucide-react";
 import { useState } from "react";
 import {
   THEME_DEFINITIONS,
@@ -12,6 +12,7 @@ const themeIcons: Record<Theme, typeof Leaf> = {
   light: Sun,
   glass: Sparkles,
   neumorphic: Layers3,
+  "liquid-glass": Waves,
 };
 
 const themes = THEME_IDS.map((id) => ({
@@ -82,6 +83,9 @@ export function SettingsView({
                   <strong>{label}</strong>
                 </span>
                 <small>{description}</small>
+                {id === "liquid-glass" && (
+                  <small className="theme-card__mode">Follows system</small>
+                )}
               </span>
               {theme === id && (
                 <span className="theme-card__check" aria-hidden="true">

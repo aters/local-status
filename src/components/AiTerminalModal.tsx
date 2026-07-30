@@ -8,6 +8,7 @@ import type {
   TerminalEvent,
   TerminalSession,
   Theme,
+  ResolvedColorScheme,
 } from "../types";
 import { TerminalPane } from "./TerminalPane";
 
@@ -16,6 +17,7 @@ interface AiTerminalModalProps {
   provider: AiProvider;
   action: AiTerminalAction;
   theme: Theme;
+  colorScheme: ResolvedColorScheme;
   findRequest: number;
   onClose: () => void;
 }
@@ -25,6 +27,7 @@ export function AiTerminalModal({
   provider,
   action,
   theme,
+  colorScheme,
   findRequest,
   onClose,
 }: AiTerminalModalProps) {
@@ -142,6 +145,7 @@ export function AiTerminalModal({
             session={currentSession}
             autoFocus
             theme={theme}
+            colorScheme={colorScheme}
             findRequest={findRequest}
           />
         </div>

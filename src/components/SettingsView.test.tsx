@@ -11,17 +11,21 @@ import { SettingsView } from "./SettingsView";
 afterEach(cleanup);
 
 describe("SettingsView themes", () => {
-  it("renders all five themes and saves a new selection", async () => {
+  it("renders all six themes and saves a new selection", async () => {
     const onThemeChange = vi.fn().mockResolvedValue(undefined);
     render(<SettingsView theme="green" onThemeChange={onThemeChange} />);
 
     const choices = screen.getAllByRole("radio");
-    expect(choices).toHaveLength(5);
-    expect(screen.getByRole("radio", { name: /Glass/ })).toBeVisible();
+    expect(choices).toHaveLength(6);
+    expect(screen.getByRole("radio", { name: /^Glass\b/ })).toBeVisible();
     expect(screen.getByRole("radio", { name: /Neumorphic/ })).toBeVisible();
+    expect(screen.getByRole("radio", { name: /^Liquid Glass\b/ })).toBeVisible();
+    expect(screen.getByText("Follows system")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("radio", { name: /Glass/ }));
-    await waitFor(() => expect(onThemeChange).toHaveBeenCalledWith("glass"));
+    fireEvent.click(screen.getByRole("radio", { name: /^Liquid Glass\b/ }));
+    await waitFor(() =>
+      expect(onThemeChange).toHaveBeenCalledWith("liquid-glass"),
+    );
   });
 
   it("reports persistence failures and re-enables the choices", async () => {
@@ -31,6 +35,6 @@ describe("SettingsView themes", () => {
     fireEvent.click(screen.getByRole("radio", { name: /Neumorphic/ }));
 
     expect(await screen.findByText("Disk unavailable")).toBeVisible();
-    expect(screen.getByRole("radio", { name: /Glass/ })).toBeEnabled();
+    expect(screen.getByRole("radio", { name: /^Glass\b/ })).toBeEnabled();
   });
 });

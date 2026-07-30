@@ -485,7 +485,7 @@ describe("Local Status", () => {
     );
     expect(window.localStatus.repositories.list).toHaveBeenCalledOnce();
     expect(
-      within(screen.getByRole("listbox", { name: "Repositories" })).getByText(
+      within(screen.getByRole("list", { name: "Repositories" })).getByText(
         "changed-web",
       ),
     ).toBeInTheDocument();
@@ -641,13 +641,17 @@ describe("Local Status", () => {
     expect(screen.queryByText("Not fetched this session")).not.toBeInTheDocument();
     expect(screen.getByText("2", { selector: ".status-badge--incoming" })).toBeVisible();
     expect(
-      screen.getByRole("option", { name: /changed-web/ }).closest(".repository-row"),
+      screen
+        .getByRole("button", { name: "Uncommitted changes changed-web" })
+        .closest(".repository-row"),
     ).toHaveClass("repository-row--changed");
     expect(
-      screen.getByRole("option", { name: /clean-api/ }).closest(".repository-row"),
+      screen
+        .getByRole("button", { name: "Clean working tree clean-api" })
+        .closest(".repository-row"),
     ).toHaveClass("repository-row--clean");
 
-    const repositoryPanel = screen.getByRole("listbox", { name: "Repositories" });
+    const repositoryPanel = screen.getByRole("list", { name: "Repositories" });
     await user.click(screen.getByRole("button", { name: "changed" }));
     expect(within(repositoryPanel).queryByText("clean-api")).not.toBeInTheDocument();
     expect(within(repositoryPanel).getByText("changed-web")).toBeVisible();
@@ -732,7 +736,9 @@ describe("Local Status", () => {
     });
 
     await user.click(
-      screen.getByRole("option", { name: /changed-web/ }),
+      screen.getByRole("button", {
+        name: "Uncommitted changes changed-web",
+      }),
     );
     await user.click(
       screen.getByRole("button", { name: "New terminal in this repository" }),

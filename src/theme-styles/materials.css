@@ -1,8 +1,8 @@
-:root:is([data-material="glass"], [data-material="neumorphic"]) {
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"]) {
   --focus-ring: color-mix(in srgb, var(--green) 78%, white);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(button, input, textarea, select) {
   transition:
     color 140ms ease,
@@ -12,7 +12,7 @@
     transform 140ms ease;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .app-header,
     .workspace-overview,
@@ -42,7 +42,7 @@
   background: var(--material-panel);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .app-nav,
     .overview-stats,
@@ -73,7 +73,7 @@
   box-shadow: var(--material-control-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .workspace-switcher:hover:not(:disabled),
     .workspace-switcher[aria-expanded="true"],
@@ -91,7 +91,7 @@
 
 /* Materialize the complete repository/context pane hierarchy. */
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .repository-header {
   margin: 10px 10px 0;
   padding: 12px;
@@ -101,24 +101,24 @@
   box-shadow: var(--material-control-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .repository-header__top {
   gap: 10px;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .repository-header__meta {
   margin-top: 9px;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(.repository-header__branch, .repository-row__branch) {
   border: 1px solid transparent;
   border-radius: 7px;
   box-shadow: none;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(.repository-header__branch, .repository-row__branch):hover {
   border-color: var(--material-border);
   color: var(--green);
@@ -126,7 +126,7 @@
   box-shadow: var(--material-control-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .context-tabs {
   height: 44px;
   flex-basis: 44px;
@@ -140,7 +140,7 @@
   box-shadow: var(--material-inset-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .context-tabs
   button {
   height: 34px;
@@ -151,13 +151,13 @@
   background: transparent;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .context-tabs
   button::after {
   display: none;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .context-tabs
   button:hover {
   border-color: var(--material-border);
@@ -166,7 +166,7 @@
   box-shadow: var(--material-control-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .context-tabs
   button.is-active {
   border-color: var(--material-border-strong);
@@ -175,7 +175,7 @@
   box-shadow: var(--material-pressed-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .context-tabs
   button
   > span {
@@ -185,7 +185,7 @@
   box-shadow: var(--material-inset-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .commit-toolbar {
   min-height: 42px;
   flex-basis: 42px;
@@ -197,7 +197,7 @@
   box-shadow: var(--material-control-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .context-search {
   height: 36px;
   flex-basis: 36px;
@@ -205,7 +205,7 @@
   border-radius: 11px;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .context-content {
   margin: 0 6px 7px;
   border: 1px solid var(--material-border);
@@ -214,17 +214,17 @@
   box-shadow: var(--material-inset-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .change-groups {
   padding: 5px 6px 14px;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .change-group {
   margin-bottom: 6px;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .change-group__header {
   height: 36px;
   margin-bottom: 3px;
@@ -236,18 +236,18 @@
   box-shadow: var(--material-control-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .change-group__header:hover {
   border-color: var(--material-border-strong);
   background: var(--material-control-hover);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .change-group__toggle {
   height: 34px;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .change-group__toggle
   > strong {
   border: 1px solid var(--material-border);
@@ -256,7 +256,7 @@
   box-shadow: var(--material-inset-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .change-action {
   width: 25px;
   height: 25px;
@@ -267,40 +267,40 @@
   box-shadow: var(--material-control-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .change-action:hover:not(:disabled) {
   border-color: var(--material-border-strong);
   color: var(--green);
   background: var(--material-control-hover);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .change-action.is-destructive:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--coral) 42%, var(--material-border));
   color: var(--coral);
   background: color-mix(in srgb, var(--coral) 10%, var(--material-control));
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .change-row {
   margin: 2px 0;
   border: 1px solid transparent;
   border-radius: 9px;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .change-row:hover {
   border-color: var(--material-border);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .change-row.is-selected {
   border-color: var(--material-border-strong);
   background: var(--material-control-active);
   box-shadow: var(--material-pressed-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .filter-strip {
   gap: 3px;
   margin: 9px 11px 8px;
@@ -311,21 +311,21 @@
   box-shadow: var(--material-inset-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .filter-strip
   button {
   border: 1px solid transparent;
   border-radius: 7px;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .filter-strip
   button:hover {
   border-color: var(--material-border);
   background: var(--material-control-hover);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .filter-strip
   button.is-active {
   border-color: var(--material-border-strong);
@@ -333,14 +333,14 @@
   box-shadow: var(--material-pressed-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(.repository-row, .repository-group__header, .stash-row) {
   border: 1px solid var(--material-border);
   background: var(--material-control);
   box-shadow: var(--material-control-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .repository-favourite,
     .repository-overflow-action,
@@ -351,7 +351,7 @@
   box-shadow: none;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(.repository-context-menu, .repository-run-menu, .branch-picker)
   button:hover:not(:disabled) {
   color: var(--green);
@@ -360,7 +360,7 @@
 
 /* Carry the material hierarchy through lists, pickers, modals, and states. */
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .commit-modal__header,
     .ai-terminal-modal__header,
@@ -374,7 +374,7 @@
   background: var(--material-panel-strong);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .commit-modal__mark,
     .ai-terminal-modal__header > span,
@@ -388,7 +388,7 @@
   box-shadow: var(--material-control-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .commit-modal__context,
     .commit-modal__composer textarea,
@@ -405,40 +405,40 @@
   box-shadow: var(--material-inset-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .commit-modal__branch {
   border-color: var(--material-border);
   background: var(--material-panel-strong);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .commit-modal__files {
   gap: 3px;
   padding: 7px;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .commit-modal__files
   > div {
   border: 1px solid transparent;
   border-radius: 8px;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .commit-modal__files
   > div:hover {
   border-color: var(--material-border);
   background: var(--material-control-hover);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .commit-modal__codex {
   border-color: var(--material-border);
   background: var(--material-control);
   box-shadow: var(--material-control-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(.commit-modal__setup-row, .commit-modal__codex-checking) {
   padding: 7px 8px;
   border: 1px solid var(--material-border);
@@ -447,7 +447,7 @@
   box-shadow: var(--material-inset-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .commit-modal__locate-button,
     .workspace-menu__add,
@@ -461,7 +461,7 @@
   box-shadow: var(--material-control-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .commit-modal__locate-button,
     .workspace-menu__add,
@@ -473,16 +473,16 @@
   background: var(--material-control-hover);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .commit-modal__ai-popover::after {
   border-color: var(--material-border);
   background: var(--material-panel);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .commit-modal__footer
   kbd,
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .quick-open__search
   kbd {
   border-color: var(--material-border);
@@ -491,7 +491,7 @@
   box-shadow: var(--material-inset-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .workspace-menu__item,
     .quick-open__result,
@@ -514,7 +514,7 @@
   box-shadow: var(--material-control-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .workspace-menu__recent,
     .quick-open__results,
@@ -528,14 +528,14 @@
   scrollbar-color: var(--material-border-strong) transparent;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(.workspace-menu__item, .quick-open__result, .branch-picker__list button) {
   margin: 2px 0;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .workspace-menu__item--current,
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .branch-picker__list
   button:disabled {
   border-color: var(--material-border-strong);
@@ -544,12 +544,12 @@
   box-shadow: var(--material-pressed-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .workspace-menu__footer {
   border-color: var(--material-border);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .quick-open__search:focus-within {
   color: var(--green);
   box-shadow:
@@ -557,41 +557,41 @@
     inset 0 -2px 0 var(--green);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .quick-open__result.is-active {
   border-color: var(--material-border-strong);
   background: var(--material-control-active);
   box-shadow: var(--material-pressed-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(.commit-list, .file-tree) {
   padding: 7px 8px 18px;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .commit-list::before {
   background: var(--material-border-strong);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(.commit-row, .tree-row, .commit-files button) {
   margin: 3px 0;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .commit-node
   span {
   background: var(--material-inset);
   box-shadow: 0 0 0 3px var(--material-inset);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(.commit-detail, .markdown-preview-shell) {
   background: var(--material-code);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(.commit-detail__icon, .pull-request-section__count) {
   border: 1px solid var(--material-border);
   color: var(--text-soft);
@@ -599,7 +599,7 @@
   box-shadow: var(--material-control-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .pull-request-list {
   gap: 5px;
   margin: 7px;
@@ -608,21 +608,21 @@
   border-radius: 10px;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .pull-request-row
   + .pull-request-row {
   border-top: 1px solid var(--material-border);
   border-radius: 9px;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .pull-request-section__empty {
   margin: 8px;
   border: 1px solid var(--material-border);
   border-radius: 10px;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .pull-requests-state {
   width: min(620px, 100%);
   min-height: 300px;
@@ -632,7 +632,7 @@
   border-radius: var(--material-radius-panel);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .pull-requests-loading
   span {
   border-color: var(--material-border);
@@ -647,31 +647,31 @@
   box-shadow: var(--material-inset-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(.session-panel__header, .listener-sidebar > header, .terminal-titlebar) {
   min-height: 58px;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .profile-list {
   gap: 5px;
   border-color: var(--material-border);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   .system-listener {
   margin-bottom: 5px;
   padding: 8px;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(.service-empty, .panel-empty--repositories, .panel-empty--large) {
   margin: 8px;
   border: 1px solid var(--material-border);
   border-radius: 10px;
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(.panel-skeleton span, .viewer-loading__head, .viewer-loading__body span) {
   border: 1px solid var(--material-border);
   background:
@@ -685,7 +685,7 @@
   box-shadow: var(--material-inset-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .commit-modal__error,
     .workspace-menu__error,
@@ -698,14 +698,14 @@
   box-shadow: var(--material-inset-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(.viewer-notice, .quick-open__notice) {
   border-color: color-mix(in srgb, var(--amber) 40%, var(--material-border));
   color: var(--amber);
   background: color-mix(in srgb, var(--amber) 8%, var(--material-panel-strong));
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .app-nav button.is-active,
     .app-settings-button.is-active,
@@ -727,7 +727,7 @@
   box-shadow: var(--material-pressed-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .panel-search,
     .context-search,
@@ -744,7 +744,7 @@
   box-shadow: var(--material-inset-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .panel-search:focus-within,
     .context-search:focus-within,
@@ -759,7 +759,7 @@
     0 0 0 3px color-mix(in srgb, var(--green) 12%, transparent);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .context-panel,
     .viewer-panel,
@@ -772,7 +772,7 @@
   background: var(--material-inset);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .terminal-stage,
     .ai-terminal-modal__terminal,
@@ -783,7 +783,7 @@
   background: var(--material-code);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .repository-row:hover,
     .change-row:hover,
@@ -801,7 +801,7 @@
   background: var(--material-control-hover);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .viewer-titlebar,
     .diff-toolbar,
@@ -816,7 +816,7 @@
   background: var(--material-panel-strong);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(.primary-button, .choose-workspace-button) {
   border-color: color-mix(in srgb, var(--green) 70%, var(--material-border));
   color: #071a15;
@@ -830,7 +830,7 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(.local-indicator, .privacy-card, .terminal-welcome > span, .empty-orbit) {
   border-color: var(--material-border-strong);
   color: var(--green);
@@ -838,39 +838,39 @@
   box-shadow: var(--material-control-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(.context-tabs button > span, .commit-scope button span, .change-kind) {
   border-color: var(--material-border);
   color: var(--text-muted);
   background: var(--material-control);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(.workspace-toast, .pull-requests-alert, .global-alert) {
   border-color: var(--material-border);
   background: var(--material-panel-strong);
   box-shadow: var(--material-panel-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(.commit-modal-backdrop, .ai-terminal-modal-backdrop, .quick-open-backdrop) {
   background: var(--material-overlay);
   backdrop-filter: blur(5px);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"]) .mobile-scrim {
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"]) .mobile-scrim {
   background: var(--material-overlay);
   backdrop-filter: blur(4px);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"]) .app-tooltip {
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"]) .app-tooltip {
   border-color: var(--material-border);
   color: var(--text);
   background: var(--material-panel-strong);
   box-shadow: var(--material-panel-shadow);
 }
 
-:root:is([data-material="glass"], [data-material="neumorphic"])
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(button, input, textarea, select, [tabindex]):focus-visible {
   outline-color: var(--focus-ring);
 }
@@ -926,6 +926,411 @@
 
 :root[data-material="glass"] .repository-row:hover {
   background: rgba(36, 65, 82, 0.68);
+}
+
+/* Liquid Glass reserves optical material for navigation and transient chrome. */
+
+:root[data-material="liquid-glass"]
+  :where(
+    .app-header,
+    .workspace-overview,
+    .repo-panel,
+    .context-tabs,
+    .filter-strip,
+    .commit-scope,
+    .viewer-titlebar,
+    .diff-toolbar,
+    .services-toolbar,
+    .session-panel__header,
+    .listener-sidebar > header,
+    .terminal-titlebar,
+    .pull-requests-toolbar,
+    .workspace-menu,
+    .branch-picker,
+    .repository-run-menu,
+    .repository-context-menu,
+    .quick-open,
+    .commit-modal,
+    .ai-terminal-modal,
+    .commit-modal__ai-popover,
+    .app-tooltip,
+    .workspace-toast
+  ) {
+  border-color: var(--liquid-rim);
+  background:
+    radial-gradient(
+      190px circle at var(--liquid-pointer-x, 50%) var(--liquid-pointer-y, 0%),
+      var(--liquid-refract),
+      transparent 62%
+    ),
+    linear-gradient(135deg, var(--liquid-specular), transparent 34%),
+    var(--liquid-glass-fill);
+  box-shadow: var(--material-panel-shadow);
+  backdrop-filter:
+    blur(var(--material-blur))
+    saturate(145%)
+    contrast(104%);
+}
+
+:root[data-material="liquid-glass"]
+  :where(
+    .workspace-menu,
+    .branch-picker,
+    .repository-run-menu,
+    .repository-context-menu,
+    .quick-open,
+    .commit-modal,
+    .ai-terminal-modal,
+    .commit-modal__ai-popover,
+    .app-tooltip,
+    .workspace-toast
+  ) {
+  background:
+    radial-gradient(
+      220px circle at var(--liquid-pointer-x, 50%) var(--liquid-pointer-y, 0%),
+      var(--liquid-refract),
+      transparent 64%
+    ),
+    linear-gradient(145deg, var(--liquid-specular), transparent 38%),
+    var(--liquid-glass-thick);
+  backdrop-filter:
+    blur(calc(var(--material-blur) + 6px))
+    saturate(150%)
+    contrast(106%);
+}
+
+:root[data-material="liquid-glass"]
+  :where(
+    .context-panel,
+    .viewer-panel,
+    .terminal-stage,
+    .settings-section,
+    .pull-request-section,
+    .pull-request-list,
+    .profile-editor,
+    .quick-open__body,
+    .commit-modal__context,
+    .commit-modal__composer textarea,
+    .ai-terminal-modal__terminal,
+    .markdown-preview-shell,
+    .commit-detail,
+    .context-content,
+    .service-empty,
+    .pull-requests-state,
+    .pull-request-section__empty,
+    .viewer-empty
+  ) {
+  border-color: var(--line);
+  background: var(--liquid-content);
+  box-shadow: var(--material-inset-shadow);
+  backdrop-filter: none;
+}
+
+:root[data-material="liquid-glass"]
+  :where(
+    .settings-section,
+    .pull-request-section,
+    .profile-editor,
+    .pull-requests-state
+  ) {
+  box-shadow:
+    0 16px 44px color-mix(in srgb, var(--shadow) 48%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--liquid-rim) 50%, transparent);
+}
+
+:root[data-material="liquid-glass"]
+  :where(
+    .app-nav,
+    .overview-stats,
+    .workspace-switcher,
+    .icon-button,
+    .sync-control,
+    .primary-button,
+    .secondary-button,
+    .context-tabs button,
+    .filter-strip button,
+    .commit-scope button,
+    .toolbar-button,
+    .terminal-titlebar button,
+    .terminal-search > button,
+    .terminal-search.is-open,
+    .change-action,
+    .commit-modal__ai-settings-button,
+    .commit-modal__ai-picker select,
+    .repository-header__branch,
+    .repository-row__branch
+  ) {
+  border-radius: 999px;
+  backdrop-filter: none;
+}
+
+:root[data-material="liquid-glass"]
+  :where(
+    .repository-header,
+    .commit-toolbar,
+    .context-search,
+    .panel-search,
+    .change-group__header,
+    .repository-row,
+    .repository-group__header,
+    .stash-row,
+    .change-row,
+    .commit-row,
+    .tree-row,
+    .commit-files button,
+    .session-group > button,
+    .profile-list > div,
+    .system-listener,
+    .pull-request-row,
+    .workspace-menu__item,
+    .quick-open__result,
+    .branch-picker__list button,
+    .repository-run-menu button,
+    .repository-context-menu button,
+    .theme-card
+  ) {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--liquid-content-soft) 88%, transparent);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+:root[data-material="liquid-glass"]
+  :where(
+    .app-nav button,
+    .icon-button,
+    .sync-control,
+    .primary-button,
+    .secondary-button,
+    .context-tabs button,
+    .filter-strip button,
+    .commit-scope button,
+    .toolbar-button,
+    .terminal-titlebar button,
+    .terminal-search > button,
+    .change-action
+  ) {
+  transition:
+    color 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms cubic-bezier(0.2, 0.75, 0.25, 1);
+}
+
+:root[data-material="liquid-glass"]
+  :where(
+    .workspace-switcher:hover:not(:disabled),
+    .workspace-switcher[aria-expanded="true"],
+    .icon-button:hover,
+    .sync-control:hover:not(:disabled),
+    .secondary-button:hover,
+    .toolbar-button:hover,
+    .terminal-titlebar button:hover,
+    .context-tabs button:hover,
+    .filter-strip button:hover,
+    .change-action:hover:not(:disabled)
+  ) {
+  border-color: var(--material-border-strong);
+  color: var(--text);
+  background: var(--material-control-hover);
+  box-shadow:
+    0 8px 20px color-mix(in srgb, var(--shadow) 38%, transparent),
+    inset 0 1px 0 var(--liquid-specular);
+}
+
+:root[data-material="liquid-glass"]
+  :where(
+    button:active:not(:disabled),
+    [role="button"]:active:not([aria-disabled="true"])
+  ) {
+  transform: translateY(1px) scale(0.985);
+  box-shadow: var(--material-pressed-shadow);
+}
+
+:root[data-material="liquid-glass"]
+  :where(
+    .app-nav button.is-active,
+    .app-settings-button.is-active,
+    .context-tabs button.is-active,
+    .filter-strip button.is-active,
+    .commit-scope button.is-active,
+    .toolbar-button.is-active,
+    .session-group > button.is-active,
+    .repository-row.is-selected,
+    .change-row.is-selected,
+    .commit-row.is-selected,
+    .tree-row.is-selected,
+    .quick-open__result.is-active,
+    .theme-card.is-selected
+  ) {
+  border-color: var(--material-border-strong);
+  color: var(--green);
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--green) 18%, transparent),
+      color-mix(in srgb, var(--green) 7%, var(--material-control-active))
+    );
+  box-shadow:
+    0 8px 24px color-mix(in srgb, var(--green) 12%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--green) 22%, white);
+}
+
+:root[data-material="liquid-glass"][data-color-scheme="light"]
+  .app-nav
+  button.is-active,
+:root[data-material="liquid-glass"][data-color-scheme="light"]
+  .context-tabs
+  button.is-active,
+:root[data-material="liquid-glass"][data-color-scheme="light"]
+  .filter-strip
+  button.is-active,
+:root[data-material="liquid-glass"][data-color-scheme="light"]
+  .commit-scope
+  button.is-active,
+:root[data-material="liquid-glass"][data-color-scheme="light"]
+  .toolbar-button.is-active {
+  border-color: #0f6b5e;
+  color: #07574e;
+  background: #d4f1ec;
+}
+
+:root[data-material="liquid-glass"] .eyebrow {
+  color: var(--text-muted);
+}
+
+:root[data-material="liquid-glass"] .viewer-empty :is(h2, h3) {
+  color: var(--text);
+}
+
+:root[data-material="liquid-glass"] .viewer-empty p:not(.eyebrow) {
+  color: var(--text-muted);
+}
+
+:root[data-material="liquid-glass"]
+  :where(.primary-button, .choose-workspace-button) {
+  border-color: color-mix(in srgb, var(--green) 72%, var(--liquid-rim));
+  color: #061d18;
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--green) 72%, white),
+      var(--green-strong)
+    );
+  box-shadow:
+    0 10px 28px color-mix(in srgb, var(--green) 22%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.48);
+}
+
+:root[data-material="liquid-glass"]
+  :where(
+    .viewer-titlebar,
+    .diff-toolbar,
+    .terminal-titlebar,
+    .session-panel__header,
+    .listener-sidebar > header,
+    .pull-requests-toolbar
+  ) {
+  z-index: 2;
+  box-shadow:
+    var(--material-panel-shadow),
+    0 18px 24px -24px var(--liquid-scroll-edge);
+}
+
+:root[data-material="liquid-glass"]
+  :where(.commit-modal-backdrop, .ai-terminal-modal-backdrop, .quick-open-backdrop) {
+  background: var(--material-overlay);
+  backdrop-filter: blur(9px) saturate(112%);
+}
+
+:root[data-material="liquid-glass"] .mobile-scrim {
+  background: var(--material-overlay);
+  backdrop-filter: blur(7px);
+}
+
+:root[data-material="liquid-glass"]
+  :where(button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+:root[data-material="liquid-glass"] :where(button, input, textarea, select):disabled {
+  opacity: 0.52;
+  filter: saturate(65%);
+}
+
+/*
+ * Liquid Glass segmented controls are one optical group. Their child buttons
+ * use tint only, which avoids glass-on-glass and keeps selection geometry calm.
+ */
+
+:root[data-material="liquid-glass"]
+  :where(.context-tabs, .filter-strip, .commit-scope) {
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--liquid-rim);
+  background:
+    linear-gradient(135deg, var(--liquid-specular), transparent 42%),
+    var(--liquid-glass-fill);
+  box-shadow:
+    0 8px 24px color-mix(in srgb, var(--shadow) 24%, transparent),
+    inset 0 1px 0 var(--liquid-specular);
+}
+
+:root[data-material="liquid-glass"] .commit-scope {
+  height: 40px;
+  flex-basis: 40px;
+  margin: 0 10px 8px;
+  border-radius: 999px;
+}
+
+:root[data-material="liquid-glass"] .filter-strip button {
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+:root[data-material="liquid-glass"] .context-tabs button,
+:root[data-material="liquid-glass"] .filter-strip button,
+:root[data-material="liquid-glass"] .commit-scope button {
+  border-radius: 999px;
+}
+
+:root[data-material="liquid-glass"]
+  :where(.context-tabs, .filter-strip, .commit-scope)
+  button {
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  background: transparent;
+  box-shadow: none;
+}
+
+:root[data-material="liquid-glass"]
+  :where(.context-tabs, .filter-strip, .commit-scope)
+  button:hover:not(.is-active) {
+  border-color: transparent;
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  box-shadow: none;
+}
+
+:root[data-material="liquid-glass"]
+  :where(.context-tabs, .filter-strip, .commit-scope)
+  button.is-active {
+  border-color: color-mix(in srgb, var(--green) 42%, var(--liquid-rim));
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 15%, var(--liquid-content-soft));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--green) 20%, white),
+    0 2px 8px color-mix(in srgb, var(--green) 10%, transparent);
+}
+
+:root[data-material="liquid-glass"][data-color-scheme="light"]
+  :where(.context-tabs, .filter-strip, .commit-scope)
+  button.is-active {
+  border-color: color-mix(in srgb, #0f6b5e 46%, var(--liquid-rim));
+  color: #07574e;
+  background: color-mix(in srgb, #8edfd1 34%, var(--liquid-content-soft));
 }
 
 /* Neumorphism keeps one matte material and communicates interaction by depth. */
@@ -1013,11 +1418,112 @@
     ) {
     background: #102030;
   }
+
+  :root[data-material="liquid-glass"]
+    :where(
+      .app-header,
+      .workspace-overview,
+      .repo-panel,
+      .context-tabs,
+      .filter-strip,
+      .commit-scope,
+      .viewer-titlebar,
+      .diff-toolbar,
+      .services-toolbar,
+      .session-panel__header,
+      .listener-sidebar > header,
+      .terminal-titlebar,
+      .pull-requests-toolbar,
+      .workspace-menu,
+      .branch-picker,
+      .repository-run-menu,
+      .repository-context-menu,
+      .quick-open,
+      .commit-modal,
+      .ai-terminal-modal,
+      .commit-modal__ai-popover,
+      .app-tooltip,
+      .workspace-toast
+    ) {
+    background: var(--liquid-content-soft);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root:is([data-material="glass"], [data-material="neumorphic"])
+  :root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
     :where(button, input, textarea, select) {
     transition: none;
   }
+
+  :root[data-material="liquid-glass"] :where(button, [role="button"]):active {
+    transform: none;
+  }
+}
+
+:root[data-material="liquid-glass"][data-reduced-transparency="true"]
+  :where(
+    .app-header,
+    .workspace-overview,
+    .repo-panel,
+    .context-tabs,
+    .filter-strip,
+    .commit-scope,
+    .viewer-titlebar,
+    .diff-toolbar,
+    .services-toolbar,
+    .session-panel__header,
+    .listener-sidebar > header,
+    .terminal-titlebar,
+    .pull-requests-toolbar,
+    .workspace-menu,
+    .branch-picker,
+    .repository-run-menu,
+    .repository-context-menu,
+    .quick-open,
+    .commit-modal,
+    .ai-terminal-modal,
+    .commit-modal__ai-popover,
+    .app-tooltip,
+    .workspace-toast
+  ) {
+  background: color-mix(in srgb, var(--liquid-content-soft) 94%, var(--text) 6%);
+  backdrop-filter: none;
+}
+
+:root[data-material="liquid-glass"][data-high-contrast="true"] {
+  --material-border: currentColor;
+  --material-border-strong: currentColor;
+  --liquid-rim: currentColor;
+}
+
+:root[data-material="liquid-glass"][data-high-contrast="true"]
+  :where(
+    .app-header,
+    .workspace-overview,
+    .repo-panel,
+    .context-tabs,
+    .filter-strip,
+    .commit-scope,
+    .viewer-titlebar,
+    .diff-toolbar,
+    .services-toolbar,
+    .session-panel__header,
+    .listener-sidebar > header,
+    .terminal-titlebar,
+    .pull-requests-toolbar,
+    .workspace-menu,
+    .branch-picker,
+    .repository-run-menu,
+    .repository-context-menu,
+    .quick-open,
+    .commit-modal,
+    .ai-terminal-modal,
+    .commit-modal__ai-popover,
+    .app-tooltip,
+    .workspace-toast
+  ) {
+  border-width: 2px !important;
+  color: var(--text);
+  background: var(--liquid-content);
+  backdrop-filter: none;
 }

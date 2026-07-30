@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 const terminalListeners = new Map();
 const shortcutListeners = new Map();
+const appearanceListeners = new Map();
 
 const invoke = (channel, payload) => ipcRenderer.invoke(channel, payload);
 
@@ -66,6 +67,21 @@ contextBridge.exposeInMainWorld("localStatus", {
   preferences: {
     get: () => invoke("preferences:get"),
     setTheme: (theme) => invoke("preferences:set-theme", { theme }),
+  },
+  appearance: {
+    get: () => invoke("appearance:get"),
+    onChange: (callback) => {
+      if (typeof callback !== "function" || appearanceListeners.has(callback)) return;
+      const listener = (_event, appearance) => callback(appearance);
+      appearanceListeners.set(callback, listener);
+      ipcRenderer.on("appearance:changed", listener);
+    },
+    offChange: (callback) => {
+      const listener = appearanceListeners.get(callback);
+      if (!listener) return;
+      ipcRenderer.removeListener("appearance:changed", listener);
+      appearanceListeners.delete(callback);
+    },
   },
   shortcuts: {
     onRequest: (callback) => {

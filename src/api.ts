@@ -1,5 +1,6 @@
 import type { CommitScope, LocalStatusBridge } from "./types";
-import { normalizeTheme } from "./theme";
+import { browserSystemAppearance, normalizeTheme } from "./theme";
+import type { SystemAppearance } from "./theme";
 
 function bridge(): LocalStatusBridge {
   if (!window.localStatus) {
@@ -79,6 +80,13 @@ export const api = {
     }),
   setTheme: (theme: Parameters<LocalStatusBridge["preferences"]["setTheme"]>[0]) =>
     bridge().preferences?.setTheme(theme) ?? Promise.resolve({ theme }),
+  appearance: () =>
+    window.localStatus?.appearance?.get() ??
+    Promise.resolve(browserSystemAppearance()),
+  onAppearanceChange: (callback: (appearance: SystemAppearance) => void) =>
+    window.localStatus?.appearance?.onChange(callback),
+  offAppearanceChange: (callback: (appearance: SystemAppearance) => void) =>
+    window.localStatus?.appearance?.offChange(callback),
   aiStatus: () => bridge().ai.status(),
   setAiPreferences: (
     provider: Parameters<LocalStatusBridge["ai"]["setPreferences"]>[0],

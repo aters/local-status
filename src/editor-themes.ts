@@ -1,7 +1,10 @@
 import type { editor } from "monaco-editor";
-import type { Theme } from "./theme";
+import type { ResolvedColorScheme, Theme } from "./theme";
 
-export const MONACO_THEMES: Record<Theme, editor.IStandaloneThemeData> = {
+const FIXED_MONACO_THEMES: Record<
+  Exclude<Theme, "liquid-glass">,
+  editor.IStandaloneThemeData
+> = {
   green: {
     base: "vs-dark",
     inherit: true,
@@ -102,4 +105,77 @@ export const MONACO_THEMES: Record<Theme, editor.IStandaloneThemeData> = {
       "scrollbarSlider.hoverBackground": "#87a5b766",
     },
   },
+};
+
+const LIQUID_GLASS_MONACO_THEMES: Record<
+  ResolvedColorScheme,
+  editor.IStandaloneThemeData
+> = {
+  light: {
+    base: "vs",
+    inherit: true,
+    rules: [],
+    colors: {
+      "editor.background": "#f7f9fc",
+      "editorGutter.background": "#f7f9fc",
+      "editorLineNumber.foreground": "#8190a4",
+      "editorLineNumber.activeForeground": "#243246",
+      "diffEditor.insertedTextBackground": "#47a87945",
+      "diffEditor.removedTextBackground": "#d85e6b40",
+      "diffEditor.insertedLineBackground": "#d9f2e588",
+      "diffEditor.removedLineBackground": "#f8dfe288",
+      "diffEditor.diagonalFill": "#e6ebf2",
+      "editorOverviewRuler.addedForeground": "#21855a",
+      "editorOverviewRuler.deletedForeground": "#bd3f50",
+      "scrollbarSlider.background": "#53657d2b",
+      "scrollbarSlider.hoverBackground": "#42536a55",
+    },
+  },
+  dark: {
+    base: "vs-dark",
+    inherit: true,
+    rules: [],
+    colors: {
+      "editor.background": "#111827",
+      "editorGutter.background": "#111827",
+      "editorLineNumber.foreground": "#617086",
+      "editorLineNumber.activeForeground": "#d9e3ef",
+      "diffEditor.insertedTextBackground": "#2c9a7052",
+      "diffEditor.removedTextBackground": "#c95a6750",
+      "diffEditor.insertedLineBackground": "#15382e88",
+      "diffEditor.removedLineBackground": "#41232c88",
+      "diffEditor.diagonalFill": "#1b2636",
+      "editorOverviewRuler.addedForeground": "#66d9b5",
+      "editorOverviewRuler.deletedForeground": "#f08491",
+      "scrollbarSlider.background": "#93a6bd2b",
+      "scrollbarSlider.hoverBackground": "#a9bad055",
+    },
+  },
+};
+
+export const MONACO_THEMES: Record<
+  Theme,
+  Record<ResolvedColorScheme, editor.IStandaloneThemeData>
+> = {
+  green: {
+    light: FIXED_MONACO_THEMES.green,
+    dark: FIXED_MONACO_THEMES.green,
+  },
+  dark: {
+    light: FIXED_MONACO_THEMES.dark,
+    dark: FIXED_MONACO_THEMES.dark,
+  },
+  light: {
+    light: FIXED_MONACO_THEMES.light,
+    dark: FIXED_MONACO_THEMES.light,
+  },
+  glass: {
+    light: FIXED_MONACO_THEMES.glass,
+    dark: FIXED_MONACO_THEMES.glass,
+  },
+  neumorphic: {
+    light: FIXED_MONACO_THEMES.neumorphic,
+    dark: FIXED_MONACO_THEMES.neumorphic,
+  },
+  "liquid-glass": LIQUID_GLASS_MONACO_THEMES,
 };

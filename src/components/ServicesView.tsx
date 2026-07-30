@@ -23,6 +23,7 @@ import type {
   TerminalKind,
   TerminalSession,
   Theme,
+  ResolvedColorScheme,
 } from "../types";
 import { TerminalPane } from "./TerminalPane";
 
@@ -50,6 +51,7 @@ export function ServicesView({
   onActiveSessionChange,
   onStartTerminal,
   theme,
+  colorScheme,
   findRequest,
 }: {
   repositories: RepositorySummary[];
@@ -61,6 +63,7 @@ export function ServicesView({
     option?: string,
   ) => Promise<void>;
   theme: Theme;
+  colorScheme: ResolvedColorScheme;
   findRequest: number;
 }) {
   const [sessions, setSessions] = useState<TerminalSession[]>([]);
@@ -476,6 +479,7 @@ export function ServicesView({
               <TerminalPane
                 session={activeSession}
                 theme={theme}
+                colorScheme={colorScheme}
                 findRequest={findRequest}
               />
             </>
