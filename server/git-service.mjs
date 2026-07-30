@@ -284,26 +284,33 @@ export async function discoverRepositories({ refresh = false } = {}) {
       : new Map();
 
   const canonicalRoot = await realpath(root);
-  const entries = await readdir(canonicalRoot, { withFileTypes: true });
-  const candidates = (
-    await Promise.all(
-      entries
-        .filter((entry) => !entry.name.startsWith("."))
-        .map(async (entry) => {
-          const childPath = join(canonicalRoot, entry.name);
-          if (!entry.isDirectory() && !entry.isSymbolicLink()) return null;
-          try {
-            if (!(await stat(childPath)).isDirectory()) return null;
-            return {
-              id: entry.name,
-              path: await realpath(childPath),
-            };
-          } catch {
-            return null;
-          }
-        }),
-    )
-  ).filter(Boolean);
+  const rootIsRepository = await isDirectGitRoot(canonicalRoot);
+  const candidates = rootIsRepository
+    ? [
+        {
+          id: basename(canonicalRoot),
+          path: canonicalRoot,
+        },
+      ]
+    : (
+        await Promise.all(
+          (await readdir(canonicalRoot, { withFileTypes: true }))
+            .filter((entry) => !entry.name.startsWith("."))
+            .map(async (entry) => {
+              const childPath = join(canonicalRoot, entry.name);
+              if (!entry.isDirectory() && !entry.isSymbolicLink()) return null;
+              try {
+                if (!(await stat(childPath)).isDirectory()) return null;
+                return {
+                  id: entry.name,
+                  path: await realpath(childPath),
+                };
+              } catch {
+                return null;
+              }
+            }),
+        )
+      ).filter(Boolean);
   const checks = await Promise.all(
     candidates.map(async (candidate) => {
       const cached = cachedRepositories.get(candidate.id);

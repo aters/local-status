@@ -389,6 +389,7 @@ export function CommitModal({
                       className="commit-modal__locate-button"
                       type="button"
                       disabled={generating || committing}
+                      title={`Search common locations for the ${providerLabel} CLI, then choose it manually if needed`}
                       onClick={onLocateAi}
                     >
                       <LocateFixed size={12} />

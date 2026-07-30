@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { rm } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -904,7 +904,7 @@ describe("local Git integration", () => {
     ).rejects.toBeInstanceOf(GitServiceError);
   });
 
-  it("excludes the workspace root even when it is a Git repository", async () => {
+  it("uses the workspace root when the selected folder is a Git repository", async () => {
     const workspace = temporaryDirectory("local-status-git-workspace-");
     execFileSync("git", ["init", "-b", "main", workspace], { stdio: "ignore" });
     configureUser(workspace);
@@ -924,9 +924,12 @@ describe("local Git integration", () => {
 
     expect(result.repositories).toHaveLength(1);
     expect(result.repositories[0]).toMatchObject({
-      id: "child-repository",
+      id: basename(workspace),
       branch: "main",
     });
+    const changes = await repositoryChanges(basename(workspace));
+    expect(changes.repositoryId).toBe(basename(workspace));
+    expect(changes.changes).toEqual(expect.any(Array));
   });
 
   it("reports unborn/detached child repositories and deduplicates symlinks", async () => {

@@ -906,6 +906,9 @@ function registerIpc() {
     if (!["codex", "claude"].includes(provider)) {
       throw new Error("Invalid AI provider.");
     }
+    const automaticallyLocated = await aiRunner.findAndSetExecutable(provider);
+    if (automaticallyLocated) return automaticallyLocated;
+
     const label = provider === "codex" ? "Codex" : "Claude";
     const result = await dialog.showOpenDialog(mainWindow, {
       title: `Locate the ${label} CLI executable`,

@@ -1,5 +1,11 @@
 // @vitest-environment node
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -189,6 +195,10 @@ describe("AiRunner", () => {
       "never",
       "exec",
       "--ephemeral",
+      "--ignore-user-config",
+      "--ignore-rules",
+      "--config",
+      'model_reasoning_effort="none"',
       "--model",
       "gpt-5.6-luna",
       "--sandbox",
@@ -200,6 +210,42 @@ describe("AiRunner", () => {
       resolve("electron/commit-message.schema.json"),
       "-",
     ]);
+  });
+
+  it("automatically locates and saves an existing CLI executable", async () => {
+    const { executable, runner, settingsStore } = await createRunner();
+    const canonicalExecutable = realpathSync(executable);
+
+    await expect(runner.findAndSetExecutable("codex")).resolves.toMatchObject({
+      providers: {
+        codex: {
+          available: true,
+          executablePath: canonicalExecutable,
+        },
+      },
+    });
+    expect(settingsStore.aiSettings().executablePaths.codex).toBe(
+      canonicalExecutable,
+    );
+  });
+
+  it("returns null when an existing CLI executable cannot be found", async () => {
+    const directory = temporaryDirectory("local-status-missing-codex-");
+    const settingsStore = new SettingsStore(join(directory, "settings.json"));
+    await settingsStore.load();
+    const runner = new AiRunner({
+      settingsStore,
+      schemaPath: resolve("electron/commit-message.schema.json"),
+      temporaryDirectory: directory,
+      environment: { PATH: "" },
+      homeDirectory: directory,
+      runFile: async () => {
+        throw new Error("Executable unavailable");
+      },
+    });
+
+    await expect(runner.findAndSetExecutable("codex")).resolves.toBeNull();
+    expect(settingsStore.aiSettings().executablePaths.codex).toBeNull();
   });
 
   it("reports signed-out and invalid-output failures without exposing credentials", async () => {
@@ -238,6 +284,19 @@ error: unexpected argument '--removed-flag' found
 
 For more information, try '--help'.`, "Codex"),
     ).toBe("error: unexpected argument '--removed-flag' found");
+  });
+
+  it("extracts the message from a multiline structured CLI error", () => {
+    expect(
+      __testing.cliErrorDetail(`ERROR: {
+  "type": "error",
+  "error": {
+    "code": "unsupported_value",
+    "message": "Unsupported reasoning effort for this model."
+  },
+  "status": 400
+}`, "Codex"),
+    ).toBe("Unsupported reasoning effort for this model.");
   });
 
   it("reads Claude authentication state from JSON even when the CLI exits successfully", async () => {
@@ -297,6 +356,25 @@ For more information, try '--help'.`, "Codex"),
       codex: "gpt-5.6-luna",
       claude: "haiku",
     });
+  });
+
+  it("checks macOS app bundles when locating Codex", () => {
+    const candidates = __testing.executableCandidates(
+      "codex",
+      { executablePaths: { codex: null, claude: null } },
+      { PATH: "" },
+      "/Users/example",
+    );
+
+    expect(candidates).toContain(
+      "/Applications/ChatGPT.app/Contents/Resources/codex",
+    );
+    expect(candidates).toContain(
+      "/Users/example/Applications/ChatGPT.app/Contents/Resources/codex",
+    );
+    expect(candidates).toContain(
+      "/Applications/Codex.app/Contents/Resources/codex",
+    );
   });
 
   it("generates with Claude using no tools and structured ephemeral output", async () => {

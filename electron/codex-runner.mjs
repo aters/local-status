@@ -86,6 +86,16 @@ function appendOutput(current, chunk, limit) {
 function structuredCliError(stdout) {
   const text = String(stdout || "").trim();
   if (!text) return null;
+  const embeddedMessage = text.match(
+    /"message"\s*:\s*("(?:\\.|[^"\\])*")/,
+  );
+  if (embeddedMessage) {
+    try {
+      return JSON.parse(embeddedMessage[1]);
+    } catch {
+      // Fall through to parsing complete JSON payloads.
+    }
+  }
   const candidates = [text, ...text.split("\n").reverse()];
   for (const candidate of candidates) {
     try {
@@ -122,7 +132,8 @@ function cliErrorDetail(stderr, providerLabel, stdout = "") {
     .map((line) => line.trim())
     .filter(Boolean);
   const detail =
-    lines.find((line) => /^error:/i.test(line)) ||
+    structuredCliError(stderr) ||
+    lines.find((line) => /^error:/i.test(line) && !/^error:\s*\{$/i.test(line)) ||
     lines.find((line) => !/^warning:/i.test(line)) ||
     structuredCliError(stdout);
   if (/not logged in|not signed in|authentication required/i.test(detail || "")) {
@@ -142,6 +153,24 @@ function executableCandidates(provider, settings, environment, homeDirectory) {
       ? [
           environment.LOCAL_STATUS_CODEX_PATH,
           join(homeDirectory, ".local", "bin", "codex"),
+          join(
+            homeDirectory,
+            "Applications",
+            "ChatGPT.app",
+            "Contents",
+            "Resources",
+            "codex",
+          ),
+          "/Applications/ChatGPT.app/Contents/Resources/codex",
+          join(
+            homeDirectory,
+            "Applications",
+            "Codex.app",
+            "Contents",
+            "Resources",
+            "codex",
+          ),
+          "/Applications/Codex.app/Contents/Resources/codex",
           "/opt/homebrew/bin/codex",
           "/usr/local/bin/codex",
         ]
@@ -401,6 +430,14 @@ export class AiRunner {
     return this.status();
   }
 
+  async findAndSetExecutable(provider) {
+    if (!PROVIDERS.includes(provider)) throw new Error("Invalid AI provider.");
+    const executable = await this.resolveExecutable(provider);
+    if (!executable) return null;
+    await this.settingsStore.setAiExecutable(provider, executable.executablePath);
+    return this.status();
+  }
+
   async setPreferences(provider, model) {
     if (!PROVIDERS.includes(provider)) throw new Error("Invalid AI provider.");
     if (!MODELS[provider].some((entry) => entry.id === model)) {
@@ -422,6 +459,10 @@ export class AiRunner {
         "never",
         "exec",
         "--ephemeral",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--config",
+        'model_reasoning_effort="none"',
         "--model",
         model,
         "--sandbox",
