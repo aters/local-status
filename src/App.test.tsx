@@ -346,6 +346,24 @@ function createBridge(current = true) {
           displayName: repository.id === repositoryId ? name : repository.id,
         })),
       })),
+      branches: vi.fn(async (repositoryId) => ({
+        repositoryId,
+        local: [
+          { name: "main", ref: "refs/heads/main", remote: false, current: false },
+          { name: "master", ref: "refs/heads/master", remote: false, current: false },
+          { name: "staging", ref: "refs/heads/staging", remote: false, current: false },
+          { name: "feature/current", ref: "refs/heads/feature/current", remote: false, current: true },
+          { name: "alpha", ref: "refs/heads/alpha", remote: false, current: false },
+        ],
+        remote: [
+          { name: "origin/release", ref: "refs/remotes/origin/release", remote: true, current: false },
+        ],
+      })),
+      switchBranch: vi.fn(async (repositoryId) => ({
+        repositoryId,
+        requiresStash: false,
+        cancelled: false,
+      })),
     },
     shortcuts: {
       onRequest: vi.fn((callback) => shortcutCallbacks.add(callback)),
@@ -642,6 +660,35 @@ describe("Local Status", () => {
     expect(screen.getByRole("textbox", { name: "Find a repository" })).not.toHaveFocus();
   });
 
+  it("shows main, master, and staging first in branch selection", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const branchButtons = await screen.findAllByRole("button", {
+      name: "Switch branch for changed-web",
+    });
+    await user.click(branchButtons[0]);
+
+    const picker = await screen.findByRole("dialog", {
+      name: "Switch branch for changed-web",
+    });
+    const localSection = within(picker)
+      .getByText("Local branches")
+      .closest("section");
+    const remoteSection = within(picker)
+      .getByText("Remote-only branches")
+      .closest("section");
+
+    expect(localSection).not.toBeNull();
+    expect(remoteSection).not.toBeNull();
+    expect(
+      within(localSection!).getAllByRole("button").map((button) => button.textContent),
+    ).toEqual(["main", "master", "staging", "feature/current", "alpha"]);
+    expect(
+      within(remoteSection!).getAllByRole("button").map((button) => button.textContent),
+    ).toEqual(["origin/release"]);
+  });
+
   it("opens a workspace file from Quick Open and focuses contextual filters", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -851,6 +898,71 @@ describe("Local Status", () => {
     expect(
       screen.getByRole("button", { name: "Stage src/Details.tsx" }),
     ).toBeVisible();
+  });
+
+  it("uses Command-clicked files for non-contiguous row actions", async () => {
+    const batchChanges: ChangeItem[] = [
+      {
+        id: "working:src/App.tsx",
+        path: "src/App.tsx",
+        previousPath: null,
+        scope: "working",
+        kind: "modified",
+        status: "M",
+      },
+      {
+        id: "working:src/Details.tsx",
+        path: "src/Details.tsx",
+        previousPath: null,
+        scope: "working",
+        kind: "modified",
+        status: "M",
+      },
+      {
+        id: "untracked:src/NewPanel.tsx",
+        path: "src/NewPanel.tsx",
+        previousPath: null,
+        scope: "untracked",
+        kind: "untracked",
+        status: "?",
+      },
+    ];
+    vi.mocked(window.localStatus.repositories.changes).mockResolvedValue({
+      repositoryId: "changed-web",
+      changes: batchChanges,
+    });
+    vi.mocked(window.localStatus.repositories.stage).mockResolvedValue({
+      repositoryId: "changed-web",
+      changes: batchChanges,
+    });
+    render(<App />);
+
+    const first = await screen.findByTitle("src/App.tsx");
+    const middle = await screen.findByTitle("src/Details.tsx");
+    const last = await screen.findByTitle("src/NewPanel.tsx");
+    fireEvent.click(first);
+    fireEvent.click(last, { metaKey: true });
+
+    expect(document.querySelectorAll(".change-row.is-selected")).toHaveLength(2);
+    expect(middle.closest(".change-row")).not.toHaveClass("is-selected");
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: "Stage 2 selected files",
+      })[1],
+    );
+    await waitFor(() =>
+      expect(window.localStatus.repositories.stage).toHaveBeenCalledWith(
+        "changed-web",
+        {
+          scope: "unstaged",
+          paths: ["src/App.tsx", "src/NewPanel.tsx"],
+        },
+      ),
+    );
+
+    fireEvent.click(first, { metaKey: true });
+    expect(document.querySelectorAll(".change-row.is-selected")).toHaveLength(1);
+    expect(last.closest(".change-row")).toHaveClass("is-selected");
   });
 
   it("explains how to resolve a sync blocked by local changes", async () => {

@@ -147,12 +147,8 @@ if (args[0] === "--version") {
 const args = process.argv.slice(2);
 if (args[0] === "--version") {
   console.log("gh version 9.9.9");
-} else if (args[0] === "auth" && args[1] === "status") {
-  console.log(JSON.stringify({
-    hosts: {
-      "github.com": [{ active: true, state: "success", login: "dmytro" }]
-    }
-  }));
+} else if (args[0] === "api" && args[1] === "user") {
+  console.log("dmytro");
 } else if (args[0] === "repo" && args[1] === "view") {
   const repository = process.cwd().split("/").pop();
   console.log(JSON.stringify({

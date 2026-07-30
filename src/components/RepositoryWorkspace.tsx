@@ -939,6 +939,7 @@ function ChangeList({
     id: string;
   } | null>(null);
   const shiftPressed = useRef(false);
+  const additiveSelectionPressed = useRef(false);
   const filtered = changes.filter((change) =>
     change.path.toLowerCase().includes(search.toLowerCase()),
   );
@@ -946,14 +947,21 @@ function ChangeList({
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Shift") shiftPressed.current = true;
+      if (event.key === "Meta" || event.key === "Control") {
+        additiveSelectionPressed.current = true;
+      }
     }
 
     function handleKeyUp(event: KeyboardEvent) {
       if (event.key === "Shift") shiftPressed.current = false;
+      if (event.key === "Meta" || event.key === "Control") {
+        additiveSelectionPressed.current = false;
+      }
     }
 
     function handleBlur() {
       shiftPressed.current = false;
+      additiveSelectionPressed.current = false;
     }
 
     window.addEventListener("keydown", handleKeyDown);
@@ -1107,7 +1115,12 @@ function ChangeList({
         : undefined;
     const anchorId =
       storedAnchor ?? routeAnchor?.id;
-    if ((event.shiftKey || shiftPressed.current) && anchorId) {
+    const extendingRange = event.shiftKey || shiftPressed.current;
+    const togglingItem =
+      event.metaKey ||
+      event.ctrlKey ||
+      additiveSelectionPressed.current;
+    if (extendingRange && anchorId) {
       const anchorIndex = items.findIndex(
         (item) => item.id === anchorId,
       );
@@ -1122,6 +1135,31 @@ function ChangeList({
         setSelectedIds(new Set([change.id]));
         selectionAnchor.current = { group: group.key, id: change.id };
       }
+    } else if (togglingItem) {
+      const itemIds = new Set(items.map((item) => item.id));
+      const canExtendCurrentSelection =
+        (!selectionAnchor.current ||
+          selectionAnchor.current.group === group.key) &&
+        [...selectedIds].every((id) => itemIds.has(id));
+      const next = canExtendCurrentSelection
+        ? new Set(selectedIds)
+        : new Set<string>();
+      if (!next.size && routeAnchor) next.add(routeAnchor.id);
+
+      if (next.has(change.id) && next.size > 1) {
+        next.delete(change.id);
+        const nextSelected = items.find((item) => next.has(item.id));
+        setSelectedIds(next);
+        selectionAnchor.current = nextSelected
+          ? { group: group.key, id: nextSelected.id }
+          : null;
+        if (nextSelected) onSelect(nextSelected);
+        return;
+      }
+
+      next.add(change.id);
+      setSelectedIds(next);
+      selectionAnchor.current = { group: group.key, id: change.id };
     } else {
       setSelectedIds(new Set([change.id]));
       selectionAnchor.current = { group: group.key, id: change.id };
@@ -1290,7 +1328,7 @@ function BranchPicker({
       entries: branches?.local ?? [],
     },
     {
-      label: "Remote branches",
+      label: "Remote-only branches",
       entries: branches?.remote ?? [],
     },
   ].map((group) => ({
@@ -2055,7 +2093,7 @@ export function RepositoryWorkspace({
     }
     try {
       await api.setArchived(repositoryId, archived);
-      setToast(
+      showToast(
         archived
           ? "Repository archived. It will be skipped by Git refresh and fetch operations."
           : "Repository restored.",
@@ -2092,55 +2130,23 @@ export function RepositoryWorkspace({
     setToast(null);
     try {
       await api.renameRepository(repositoryId, name);
-      setToast(`Worktree renamed to ${name}.`);
+      showToast(`Worktree renamed to ${name}.`);
       return true;
     } catch (caught) {
       const restored = { ...nextOverrides };
       if (previous === undefined) delete restored[repositoryId];
       else restored[repositoryId] = previous;
       setRepositoryNameOverrides(restored);
-      setToast(
+      showToast(
         caught instanceof Error
           ? caught.message
           : "Could not rename the worktree.",
+        { tone: "error" },
       );
       return false;
     }
   }
 
-  async function performStashAction(
-    stash: RepositoryStash,
-    mode: "apply" | "pop",
-  ) {
-    if (!selectedId) return;
-    setStashBusy(`${mode}:${stash.ref}`);
-    setToast(null);
-    try {
-      const result = await api.stashAction(selectedId, stash.ref, mode);
-      setStashes(result.stashes);
-      setChanges(result.changes);
-      setToast(
-        mode === "apply"
-          ? `Applied ${stash.ref}.`
-          : `Popped ${stash.ref}.`,
-      );
-      await onRefresh();
-    } catch (caught) {
-      setToast(
-        caught instanceof Error
-          ? caught.message
-          : `Could not ${mode} ${stash.ref}.`,
-      );
-      try {
-        setStashes((await api.stashes(selectedId)).stashes);
-      } catch {
-        // Preserve the actionable Git error if the refresh also fails.
-      }
-      await onRefresh();
-    } finally {
-      setStashBusy(null);
-    }
-  }
   async function openRunMenu(repositoryId: string) {
     setTerminalError(null);
     if (runMenuOpen) {

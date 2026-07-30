@@ -28,6 +28,7 @@ import {
   listRepositorySummaries,
   parsePorcelainV2,
   prepareCommit,
+  repositoryBranches,
   repositoryChanges,
   repositoryCommits,
   repositoryFiles,
@@ -106,6 +107,48 @@ describe("parsePorcelainV2", () => {
         expect.objectContaining({ path: "src/new file.md", scope: "untracked" }),
       ]),
     );
+  });
+});
+
+describe("branch selection", () => {
+  it("prioritizes common branches and hides remotes that already exist locally", async () => {
+    const workspace = temporaryDirectory("local-status-branches-");
+    const repository = join(workspace, "branches");
+    execFileSync("git", ["init", "-b", "feature/current", repository], {
+      stdio: "ignore",
+    });
+    configureUser(repository);
+    writeFileSync(join(repository, "tracked.txt"), "base\n");
+    git(repository, "add", ".");
+    git(repository, "commit", "-m", "Initial commit");
+    for (const branch of ["zeta", "staging", "main", "master", "alpha"]) {
+      git(repository, "branch", branch);
+    }
+    for (const branch of [
+      "zeta",
+      "staging",
+      "main",
+      "master",
+      "alpha",
+      "remote-only",
+    ]) {
+      git(repository, "update-ref", `refs/remotes/origin/${branch}`, "HEAD");
+    }
+    setWorkspaceRoot(workspace);
+
+    const branches = await repositoryBranches("branches");
+
+    expect(branches.local.map((branch) => branch.name)).toEqual([
+      "main",
+      "master",
+      "staging",
+      "feature/current",
+      "alpha",
+      "zeta",
+    ]);
+    expect(branches.remote.map((branch) => branch.name)).toEqual([
+      "origin/remote-only",
+    ]);
   });
 });
 

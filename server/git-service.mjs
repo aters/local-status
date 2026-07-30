@@ -658,13 +658,30 @@ export async function repositoryBranches(repositoryId) {
     };
     (entry.remote ? remote : local).push(entry);
   }
+  const preferred = new Map([
+    ["main", 0],
+    ["master", 1],
+    ["staging", 2],
+  ]);
+  const priority = (branch) => {
+    const name = branch.remote
+      ? branch.name.split("/").slice(1).join("/")
+      : branch.name;
+    return preferred.get(name) ?? preferred.size;
+  };
   const order = (left, right) =>
+    priority(left) - priority(right) ||
     Number(right.current) - Number(left.current) ||
     left.name.localeCompare(right.name);
+  const localNames = new Set(local.map((branch) => branch.name));
+  const remoteOnly = remote.filter((branch) => {
+    const localName = branch.name.split("/").slice(1).join("/");
+    return !localNames.has(localName);
+  });
   return {
     repositoryId,
     local: local.sort(order),
-    remote: remote.sort(order),
+    remote: remoteOnly.sort(order),
   };
 }
 
