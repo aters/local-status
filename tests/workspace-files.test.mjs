@@ -35,7 +35,6 @@ describe("workspace file indexing", () => {
   it("indexes direct-child repositories, includes non-ignored untracked files, and caches", async () => {
     const workspace = mkdtempSync(join(tmpdir(), "local-status-files-"));
     temporaryDirectories.push(workspace);
-    execFileSync("git", ["init", "-q", workspace]);
 
     const web = createRepository(workspace, "web app");
     mkdirSync(join(web, "src"));

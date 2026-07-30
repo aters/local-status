@@ -332,6 +332,20 @@ function createBridge(current = true) {
           },
         ],
       })),
+      setArchived: vi.fn(async (repositoryId, archived) => ({
+        ...repositories,
+        repositories: repositories.repositories.map((repository) => ({
+          ...repository,
+          archived: repository.id === repositoryId ? archived : false,
+        })),
+      })),
+      rename: vi.fn(async (repositoryId, name) => ({
+        ...repositories,
+        repositories: repositories.repositories.map((repository) => ({
+          ...repository,
+          displayName: repository.id === repositoryId ? name : repository.id,
+        })),
+      })),
     },
     shortcuts: {
       onRequest: vi.fn((callback) => shortcutCallbacks.add(callback)),
@@ -519,6 +533,83 @@ describe("Local Status", () => {
     expect(screen.getByRole("button", { name: "engineering" })).toHaveAttribute(
       "aria-expanded",
       "true",
+    );
+  });
+
+  it("renames and archives worktrees from their contextual menu", async () => {
+    const user = userEvent.setup();
+    const bridge = createBridge();
+    const groupedRepositories = {
+      ...repositories,
+      repositories: repositories.repositories.map((repository, index) => ({
+        ...repository,
+        id: index === 0 ? "commerce" : "commerce-feature",
+        groupId: "group-commerce",
+        groupName: "commerce",
+        remoteIdentity: null,
+        isPrimaryWorktree: index === 0,
+        favourite: false,
+        archived: false,
+      })),
+    };
+    bridge.repositories.list = vi.fn(async () => groupedRepositories);
+    bridge.repositories.rename = vi.fn(async (repositoryId, name) => ({
+      ...groupedRepositories,
+      repositories: groupedRepositories.repositories.map((repository) => ({
+        ...repository,
+        displayName:
+          repository.id === repositoryId ? name : repository.id,
+      })),
+    }));
+    bridge.repositories.setArchived = vi.fn(
+      async (repositoryId, archived) => ({
+        ...groupedRepositories,
+        repositories: groupedRepositories.repositories.map((repository) => ({
+          ...repository,
+          archived: repository.id === repositoryId ? archived : false,
+        })),
+      }),
+    );
+    window.localStatus = bridge;
+    render(<App />);
+
+    expect(await screen.findByText("2 checkouts")).toBeVisible();
+    const actionsButton = await screen.findByRole("button", {
+      name: "More actions for commerce-feature",
+    });
+    await user.click(actionsButton);
+    expect(actionsButton).toBeVisible();
+    expect(actionsButton.closest(".repository-row")).toHaveClass(
+      "is-context-menu-open",
+    );
+    const menu = screen.getByRole("menu", {
+      name: "Actions for commerce-feature",
+    });
+    expect(within(menu).getByRole("menuitem", { name: "Archive" })).toBeVisible();
+    await user.click(within(menu).getByRole("menuitem", { name: "Rename" }));
+    const input = screen.getByRole("textbox", {
+      name: "New name for commerce-feature",
+    });
+    await user.clear(input);
+    await user.type(input, "Checkout Platform");
+    await user.click(
+      screen.getByRole("button", { name: "Save worktree name" }),
+    );
+
+    expect(bridge.repositories.rename).toHaveBeenCalledWith(
+      "commerce-feature",
+      "Checkout Platform",
+    );
+    expect(await screen.findAllByText("Checkout Platform")).toHaveLength(2);
+    await user.click(
+      screen.getByRole("button", {
+        name: "More actions for Checkout Platform",
+      }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Archive" }));
+    expect(bridge.repositories.setArchived).toHaveBeenCalledWith(
+      "commerce-feature",
+      true,
     );
   });
 

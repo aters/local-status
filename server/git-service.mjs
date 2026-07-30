@@ -283,26 +283,37 @@ export async function discoverRepositories({ refresh = false } = {}) {
       ? repositoryCache.repositories
       : new Map();
 
-  const entries = await readdir(root, { withFileTypes: true });
-  const candidates = (
-    await Promise.all(
-      entries
-        .filter((entry) => !entry.name.startsWith("."))
-        .map(async (entry) => {
-          const childPath = join(root, entry.name);
-          if (!entry.isDirectory() && !entry.isSymbolicLink()) return null;
-          try {
-            if (!(await stat(childPath)).isDirectory()) return null;
-            return {
-              id: entry.name,
-              path: await realpath(childPath),
-            };
-          } catch {
-            return null;
-          }
-        }),
-    )
-  ).filter(Boolean);
+  const canonicalRoot = await realpath(root);
+  let candidates;
+  if (await isDirectGitRoot(canonicalRoot)) {
+    candidates = [
+      {
+        id: basename(canonicalRoot),
+        path: canonicalRoot,
+      },
+    ];
+  } else {
+    const entries = await readdir(canonicalRoot, { withFileTypes: true });
+    candidates = (
+      await Promise.all(
+        entries
+          .filter((entry) => !entry.name.startsWith("."))
+          .map(async (entry) => {
+            const childPath = join(canonicalRoot, entry.name);
+            if (!entry.isDirectory() && !entry.isSymbolicLink()) return null;
+            try {
+              if (!(await stat(childPath)).isDirectory()) return null;
+              return {
+                id: entry.name,
+                path: await realpath(childPath),
+              };
+            } catch {
+              return null;
+            }
+          }),
+      )
+    ).filter(Boolean);
+  }
   const checks = await Promise.all(
     candidates.map(async (candidate) => {
       const cached = cachedRepositories.get(candidate.id);
@@ -538,12 +549,19 @@ export async function repositoryStatus(repository) {
   };
 }
 
-export async function listRepositorySummaries({ archivedGroupIds = [] } = {}) {
+export async function listRepositorySummaries({
+  archivedGroupIds = [],
+  archivedRepositoryIds = [],
+} = {}) {
   const repositories = await discoverRepositories({ refresh: true });
   const archivedGroups = new Set(archivedGroupIds);
+  const archivedRepositories = new Set(archivedRepositoryIds);
   const summaries = await Promise.all(
     [...repositories.values()].map(async (repository) => {
-      if (archivedGroups.has(repository.groupId)) {
+      if (
+        archivedGroups.has(repository.groupId) ||
+        archivedRepositories.has(repository.id)
+      ) {
         return {
           id: repository.id,
           groupId: repository.groupId,
@@ -1796,11 +1814,17 @@ async function mapWithConcurrency(items, concurrency, callback) {
   return results;
 }
 
-export async function fetchAll({ excludeGroupIds = [] } = {}) {
+export async function fetchAll({
+  excludeGroupIds = [],
+  excludeRepositoryIds = [],
+} = {}) {
   const excludedGroups = new Set(excludeGroupIds);
+  const excludedRepositories = new Set(excludeRepositoryIds);
   const repositories = [...(await discoverRepositories({ refresh: true })).values()];
   const activeRepositories = repositories.filter(
-    (repository) => !excludedGroups.has(repository.groupId),
+    (repository) =>
+      !excludedGroups.has(repository.groupId) &&
+      !excludedRepositories.has(repository.id),
   );
   const results = await mapWithConcurrency(activeRepositories, 3, async (repository) => {
     try {

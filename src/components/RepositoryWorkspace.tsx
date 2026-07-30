@@ -23,6 +23,8 @@ import {
   Maximize2,
   Minimize2,
   Minus,
+  MoreHorizontal,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -221,6 +223,10 @@ function repositoryGroupName(repository: RepositorySummary) {
   return repository.groupName || repository.id;
 }
 
+function repositoryDisplayName(repository: RepositorySummary) {
+  return repository.displayName?.trim() || repository.id;
+}
+
 const scopeGroups: Array<{
   key: ChangeGroupKey;
   scopes: WorkingChangeScope[];
@@ -318,6 +324,7 @@ function RepositoryNavigator({
   searchInputRef,
   onToggleFavourite,
   onToggleArchived,
+  onRenameRepository,
   onOpenBranches,
 }: {
   repositories: RepositorySummary[];
@@ -328,7 +335,8 @@ function RepositoryNavigator({
   onCloseMobile: () => void;
   searchInputRef: React.RefObject<HTMLInputElement | null>;
   onToggleFavourite: (groupId: string, favourite: boolean) => void;
-  onToggleArchived: (groupId: string, archived: boolean) => void;
+  onToggleArchived: (repositoryId: string, archived: boolean) => void;
+  onRenameRepository: (repositoryId: string, name: string) => Promise<boolean>;
   onOpenBranches: (repositoryId: string, anchor: HTMLElement) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -350,67 +358,86 @@ function RepositoryNavigator({
       return new Set();
     }
   });
+  const [editingRepositoryId, setEditingRepositoryId] = useState<string | null>(
+    null,
+  );
+  const [repositoryNameDraft, setRepositoryNameDraft] = useState("");
+  const [repositoryNameBusy, setRepositoryNameBusy] = useState(false);
+  const repositoryNameInputRef = useRef<HTMLInputElement>(null);
+  const [repositoryMenu, setRepositoryMenu] = useState<{
+    repositoryId: string;
+    top: number;
+    left: number;
+  } | null>(null);
+  const repositoryMenuRef = useRef<HTMLDivElement>(null);
   const { groups, archivedGroups } = useMemo(() => {
-    const grouped = new Map<string, RepositorySummary[]>();
-    for (const repository of repositories) {
-      const groupId = repositoryGroupId(repository);
-      grouped.set(groupId, [
-        ...(grouped.get(groupId) ?? []),
-        repository,
-      ]);
-    }
     const normalizedQuery = query.trim().toLowerCase();
-    const allGroups = [...grouped.entries()]
-      .map(([id, members]) => {
-        const sortedMembers = [...members].sort(
-          (left, right) =>
-            Number(right.isPrimaryWorktree) - Number(left.isPrimaryWorktree) ||
-            left.id.localeCompare(right.id),
-        );
-        return {
-          id,
-          name: repositoryGroupName(members[0]),
-          favourite: members.some((member) => member.favourite),
-          archived: members.every((member) => member.archived),
-          members: sortedMembers,
-          files: members.reduce(
-            (total, member) => total + member.summary.files,
-            0,
-          ),
-          incoming: members.reduce(
-            (total, member) => total + member.incoming,
-            0,
-          ),
-          outgoing: members.reduce(
-            (total, member) => total + member.outgoing,
-            0,
-          ),
-        };
-      })
-      .filter(
-        (group) =>
-          !normalizedQuery ||
+    function groupedRepositories(entries: RepositorySummary[]) {
+      const grouped = new Map<string, RepositorySummary[]>();
+      for (const repository of entries) {
+        const groupId = repositoryGroupId(repository);
+        grouped.set(groupId, [...(grouped.get(groupId) ?? []), repository]);
+      }
+      return [...grouped.entries()]
+        .map(([id, members]) => {
+          const sortedMembers = [...members].sort(
+            (left, right) =>
+              Number(right.isPrimaryWorktree) - Number(left.isPrimaryWorktree) ||
+              repositoryDisplayName(left).localeCompare(
+                repositoryDisplayName(right),
+              ),
+          );
+          return {
+            id,
+            name: repositoryGroupName(members[0]),
+            favourite: members.some((member) => member.favourite),
+            archived: members.every((member) => member.archived),
+            members: sortedMembers,
+            files: members.reduce(
+              (total, member) => total + member.summary.files,
+              0,
+            ),
+            incoming: members.reduce(
+              (total, member) => total + member.incoming,
+              0,
+            ),
+            outgoing: members.reduce(
+              (total, member) => total + member.outgoing,
+              0,
+            ),
+          };
+        })
+        .filter(
+          (group) =>
+            !normalizedQuery ||
             group.name.toLowerCase().includes(normalizedQuery) ||
             group.members.some(
               (repository) =>
+                repositoryDisplayName(repository)
+                  .toLowerCase()
+                  .includes(normalizedQuery) ||
                 repository.id.toLowerCase().includes(normalizedQuery) ||
                 repository.branch?.toLowerCase().includes(normalizedQuery),
             ),
-      )
-      .sort(
-        (left, right) =>
-          Number(right.favourite) - Number(left.favourite) ||
-          left.name.localeCompare(right.name),
-      );
+        )
+        .sort(
+          (left, right) =>
+            Number(right.favourite) - Number(left.favourite) ||
+            left.name.localeCompare(right.name),
+        );
+    }
+    const activeGroups = groupedRepositories(
+      repositories.filter((repository) => !repository.archived),
+    );
     return {
-      groups: allGroups.filter(
-        (group) =>
-          !group.archived &&
-          group.members.some((repository) =>
-            repositoryPassesFilter(repository, filter),
-          ),
+      groups: activeGroups.filter((group) =>
+        group.members.some((repository) =>
+          repositoryPassesFilter(repository, filter),
+        ),
       ),
-      archivedGroups: allGroups.filter((group) => group.archived),
+      archivedGroups: groupedRepositories(
+        repositories.filter((repository) => repository.archived),
+      ),
     };
   }, [filter, query, repositories]);
   const selectedGroupId = repositories.find(
@@ -433,6 +460,36 @@ function RepositoryNavigator({
     });
   }, [selectedRepositoryGroupId]);
 
+  useEffect(() => {
+    if (!editingRepositoryId) return;
+    window.requestAnimationFrame(() => {
+      repositoryNameInputRef.current?.focus();
+      repositoryNameInputRef.current?.select();
+    });
+  }, [editingRepositoryId]);
+
+  useEffect(() => {
+    if (!repositoryMenu) return;
+    function closeOnOutsidePointer(event: PointerEvent) {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        !repositoryMenuRef.current?.contains(target)
+      ) {
+        setRepositoryMenu(null);
+      }
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setRepositoryMenu(null);
+    }
+    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
+    document.addEventListener("keydown", closeOnEscape, true);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+      document.removeEventListener("keydown", closeOnEscape, true);
+    };
+  }, [repositoryMenu]);
+
   function toggleGroup(groupId: string) {
     setExpandedGroups((current) => {
       const next = new Set(current);
@@ -446,46 +503,64 @@ function RepositoryNavigator({
     });
   }
 
-  function repositoryActions({
-    groupId,
-    name,
-    favourite,
-    archived,
-  }: {
-    groupId: string;
-    name: string;
-    favourite: boolean;
-    archived: boolean;
-  }) {
+  function openRepositoryMenu(
+    repository: RepositorySummary,
+    anchor: HTMLButtonElement,
+  ) {
+    const bounds = anchor.getBoundingClientRect();
+    const width = 176;
+    setRepositoryMenu({
+      repositoryId: repository.id,
+      top: Math.min(bounds.bottom + 5, window.innerHeight - 104),
+      left: Math.max(8, Math.min(bounds.right - width, window.innerWidth - width - 8)),
+    });
+  }
+
+  function beginRepositoryRename(repository: RepositorySummary) {
+    setRepositoryMenu(null);
+    setEditingRepositoryId(repository.id);
+    setRepositoryNameDraft(repositoryDisplayName(repository));
+  }
+
+  function cancelRepositoryRename() {
+    if (repositoryNameBusy) return;
+    setEditingRepositoryId(null);
+    setRepositoryNameDraft("");
+  }
+
+  async function saveRepositoryName(repository: RepositorySummary) {
+    const name = repositoryNameDraft.trim();
+    const currentName = repositoryDisplayName(repository);
+    if (!name || name === currentName) {
+      if (name === currentName) cancelRepositoryRename();
+      return;
+    }
+    setRepositoryNameBusy(true);
+    try {
+      if (await onRenameRepository(repository.id, name)) {
+        setEditingRepositoryId(null);
+        setRepositoryNameDraft("");
+      }
+    } finally {
+      setRepositoryNameBusy(false);
+    }
+  }
+
+  function favouriteAction(groupId: string, name: string, favourite: boolean) {
     return (
-      <span className="repository-row__actions">
-        {!archived && (
-          <button
-            className={`repository-favourite ${favourite ? "is-active" : ""}`}
-            type="button"
-            aria-label={
-              favourite
-                ? `Remove ${name} from favourites`
-                : `Add ${name} to favourites`
-            }
-            data-tooltip={
-              favourite ? "Remove from favourites" : "Add to favourites"
-            }
-            onClick={() => onToggleFavourite(groupId, !favourite)}
-          >
-            <Star size={14} fill="currentColor" />
-          </button>
-        )}
-        <button
-          className="repository-archive-action"
-          type="button"
-          aria-label={archived ? `Restore ${name}` : `Archive ${name}`}
-          data-tooltip={archived ? "Restore repository" : "Archive repository"}
-          onClick={() => onToggleArchived(groupId, !archived)}
-        >
-          {archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
-        </button>
-      </span>
+      <button
+        className={`repository-favourite ${favourite ? "is-active" : ""}`}
+        type="button"
+        aria-label={
+          favourite
+            ? `Remove ${name} from favourites`
+            : `Add ${name} to favourites`
+        }
+        data-tooltip={favourite ? "Remove from favourites" : "Add to favourites"}
+        onClick={() => onToggleFavourite(groupId, !favourite)}
+      >
+        <Star size={14} fill="currentColor" />
+      </button>
     );
   }
 
@@ -494,34 +569,88 @@ function RepositoryNavigator({
     favouriteControl?: { groupId: string; favourite: boolean },
   ) {
     const selected = repository.id === selectedId;
+    const displayName = repositoryDisplayName(repository);
+    const renaming = editingRepositoryId === repository.id;
     return (
       <div
         className={`repository-row repository-row--${repositoryHealth(repository)} ${
           selected ? "is-selected" : ""
+        } ${
+          repositoryMenu?.repositoryId === repository.id
+            ? "is-context-menu-open"
+            : ""
         }`}
         key={repository.id}
       >
-        <button
-          className="repository-row__select"
-          type="button"
-          role="option"
-          aria-selected={selected}
-          aria-disabled={repository.archived}
-          disabled={repository.archived}
-          onClick={() => {
-            onSelect(repository.id);
-            onCloseMobile();
-          }}
-        >
-          <RepositoryMark repository={repository} />
-          <span className="repository-row__content">
-            <span className="repository-row__name">{repository.id}</span>
-          </span>
-        </button>
+        {renaming ? (
+          <form
+            className="repository-row__rename"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveRepositoryName(repository);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return;
+              event.preventDefault();
+              cancelRepositoryRename();
+            }}
+          >
+            <RepositoryMark repository={repository} />
+            <input
+              ref={repositoryNameInputRef}
+              value={repositoryNameDraft}
+              maxLength={80}
+              aria-label={`New name for ${displayName}`}
+              disabled={repositoryNameBusy}
+              onChange={(event) => setRepositoryNameDraft(event.target.value)}
+            />
+            <button
+              type="submit"
+              aria-label="Save worktree name"
+              disabled={
+                repositoryNameBusy ||
+                !repositoryNameDraft.trim() ||
+                repositoryNameDraft.trim() === displayName
+              }
+            >
+              {repositoryNameBusy ? (
+                <RefreshCw className="is-spinning" size={13} />
+              ) : (
+                <Check size={14} />
+              )}
+            </button>
+            <button
+              type="button"
+              aria-label="Cancel worktree rename"
+              disabled={repositoryNameBusy}
+              onClick={cancelRepositoryRename}
+            >
+              <X size={14} />
+            </button>
+          </form>
+        ) : (
+          <button
+            className="repository-row__select"
+            type="button"
+            role="option"
+            aria-selected={selected}
+            aria-disabled={repository.archived}
+            disabled={repository.archived}
+            onClick={() => {
+              onSelect(repository.id);
+              onCloseMobile();
+            }}
+          >
+            <RepositoryMark repository={repository} />
+            <span className="repository-row__content">
+              <span className="repository-row__name">{displayName}</span>
+            </span>
+          </button>
+        )}
         <button
           className="repository-row__branch"
           type="button"
-          aria-label={`Switch branch for ${repository.id}`}
+          aria-label={`Switch branch for ${displayName}`}
           data-tooltip="Switch branch"
           disabled={repository.archived}
           onClick={(event) => onOpenBranches(repository.id, event.currentTarget)}
@@ -551,14 +680,29 @@ function RepositoryNavigator({
             </StatusBadge>
           )}
         </span>
-        {favouriteControl
-          ? repositoryActions({
-              groupId: favouriteControl.groupId,
-              name: repositoryGroupName(repository),
-              favourite: favouriteControl.favourite,
-              archived: repository.archived,
-            })
-          : null}
+        <span className="repository-row__actions">
+          {favouriteControl && !repository.archived
+            ? favouriteAction(
+                favouriteControl.groupId,
+                repositoryGroupName(repository),
+                favouriteControl.favourite,
+              )
+            : null}
+          {!renaming && (
+            <button
+              className="repository-overflow-action"
+              type="button"
+              aria-label={`More actions for ${displayName}`}
+              aria-haspopup="menu"
+              aria-expanded={repositoryMenu?.repositoryId === repository.id}
+              onClick={(event) =>
+                openRepositoryMenu(repository, event.currentTarget)
+              }
+            >
+              <MoreHorizontal size={16} />
+            </button>
+          )}
+        </span>
       </div>
     );
   }
@@ -599,12 +743,11 @@ function RepositoryNavigator({
               <StatusBadge tone="outgoing">{group.outgoing}</StatusBadge>
             )}
           </span>
-          {repositoryActions({
-            groupId: group.id,
-            name: group.name,
-            favourite: group.favourite,
-            archived: group.archived,
-          })}
+          <span className="repository-row__actions">
+            {!group.archived
+              ? favouriteAction(group.id, group.name, group.favourite)
+              : null}
+          </span>
         </div>
         {expandedGroups.has(group.id) && (
           <div className="repository-group__members">
@@ -616,9 +759,15 @@ function RepositoryNavigator({
   }
 
   const showsArchivedGroups = filter === "all" && archivedGroups.length > 0;
+  const menuRepository = repositoryMenu
+    ? repositories.find(
+        (repository) => repository.id === repositoryMenu.repositoryId,
+      ) ?? null
+    : null;
 
   return (
-    <aside className={`repo-panel ${mobileOpen ? "is-mobile-open" : ""}`}>
+    <>
+      <aside className={`repo-panel ${mobileOpen ? "is-mobile-open" : ""}`}>
       <div className="panel-titlebar">
         <div>
           <span className="panel-kicker">Workspace</span>
@@ -693,7 +842,12 @@ function RepositoryNavigator({
             >
               <Archive size={13} />
               <span>Archived</span>
-              <small>{archivedGroups.length}</small>
+              <small>
+                {
+                  repositories.filter((repository) => repository.archived)
+                    .length
+                }
+              </small>
               <ChevronRight
                 className={archivedExpanded ? "is-open" : ""}
                 size={14}
@@ -711,7 +865,47 @@ function RepositoryNavigator({
         <span className="privacy-dot" />
         Local Git data only
       </div>
-    </aside>
+      </aside>
+      {repositoryMenu &&
+        menuRepository &&
+        createPortal(
+          <div
+            ref={repositoryMenuRef}
+            className="repository-context-menu"
+            role="menu"
+            aria-label={`Actions for ${repositoryDisplayName(menuRepository)}`}
+            style={{
+              top: repositoryMenu.top,
+              left: repositoryMenu.left,
+            }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => beginRepositoryRename(menuRepository)}
+            >
+              <Pencil size={14} />
+              Rename
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setRepositoryMenu(null);
+                onToggleArchived(menuRepository.id, !menuRepository.archived);
+              }}
+            >
+              {menuRepository.archived ? (
+                <ArchiveRestore size={14} />
+              ) : (
+                <Archive size={14} />
+              )}
+              {menuRepository.archived ? "Restore" : "Archive"}
+            </button>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 
@@ -1280,14 +1474,19 @@ export function RepositoryWorkspace({
   const [archivedOverrides, setArchivedOverrides] = useState<
     Record<string, boolean>
   >({});
+  const [repositoryNameOverrides, setRepositoryNameOverrides] = useState<
+    Record<string, string>
+  >({});
   const repositories = useMemo(
     () =>
       (data?.repositories ?? []).map((repository) => {
         const groupId = repositoryGroupId(repository);
         return {
           ...repository,
+          displayName:
+            repositoryNameOverrides[repository.id] ?? repository.displayName,
           archived:
-            archivedOverrides[groupId] ?? repository.archived ?? false,
+            archivedOverrides[repository.id] ?? repository.archived ?? false,
           favourite:
             favouriteOverrides[groupId] ??
             favouriteOverrides[`repository:${repository.id}`] ??
@@ -1295,7 +1494,12 @@ export function RepositoryWorkspace({
             false,
         };
       }),
-    [archivedOverrides, data?.repositories, favouriteOverrides],
+    [
+      archivedOverrides,
+      data?.repositories,
+      favouriteOverrides,
+      repositoryNameOverrides,
+    ],
   );
   const activeRepositories = useMemo(
     () => repositories.filter((repository) => !repository.archived),
@@ -1828,17 +2032,20 @@ export function RepositoryWorkspace({
     }
   }
 
-  async function toggleArchived(groupId: string, archived: boolean) {
-    const key = `archive:${groupId}`;
-    const previous = archivedOverrides[groupId];
-    const nextOverrides = { ...archivedOverrides, [groupId]: archived };
+  async function toggleArchived(repositoryId: string, archived: boolean) {
+    const key = `archive:${repositoryId}`;
+    const previous = archivedOverrides[repositoryId];
+    const nextOverrides = {
+      ...archivedOverrides,
+      [repositoryId]: archived,
+    };
     setChangeBusy(key);
     setToast(null);
     setArchivedOverrides(nextOverrides);
     if (
       archived &&
       selectedRepository &&
-      repositoryGroupId(selectedRepository) === groupId
+      selectedRepository.id === repositoryId
     ) {
       setSelectedId(null);
       setCompareRequest(null);
@@ -1847,8 +2054,8 @@ export function RepositoryWorkspace({
       setCommitDetail(null);
     }
     try {
-      await api.setArchived(groupId, archived);
-      showToast(
+      await api.setArchived(repositoryId, archived);
+      setToast(
         archived
           ? "Repository archived. It will be skipped by Git refresh and fetch operations."
           : "Repository restored.",
@@ -1856,8 +2063,8 @@ export function RepositoryWorkspace({
       await onRefresh();
     } catch (caught) {
       const restored = { ...nextOverrides };
-      if (previous === undefined) delete restored[groupId];
-      else restored[groupId] = previous;
+      if (previous === undefined) delete restored[repositoryId];
+      else restored[repositoryId] = previous;
       setArchivedOverrides(restored);
       showToast(
         caught instanceof Error
@@ -1872,6 +2079,68 @@ export function RepositoryWorkspace({
     }
   }
 
+  async function renameRepository(
+    repositoryId: string,
+    name: string,
+  ): Promise<boolean> {
+    const previous = repositoryNameOverrides[repositoryId];
+    const nextOverrides = {
+      ...repositoryNameOverrides,
+      [repositoryId]: name,
+    };
+    setRepositoryNameOverrides(nextOverrides);
+    setToast(null);
+    try {
+      await api.renameRepository(repositoryId, name);
+      setToast(`Worktree renamed to ${name}.`);
+      return true;
+    } catch (caught) {
+      const restored = { ...nextOverrides };
+      if (previous === undefined) delete restored[repositoryId];
+      else restored[repositoryId] = previous;
+      setRepositoryNameOverrides(restored);
+      setToast(
+        caught instanceof Error
+          ? caught.message
+          : "Could not rename the worktree.",
+      );
+      return false;
+    }
+  }
+
+  async function performStashAction(
+    stash: RepositoryStash,
+    mode: "apply" | "pop",
+  ) {
+    if (!selectedId) return;
+    setStashBusy(`${mode}:${stash.ref}`);
+    setToast(null);
+    try {
+      const result = await api.stashAction(selectedId, stash.ref, mode);
+      setStashes(result.stashes);
+      setChanges(result.changes);
+      setToast(
+        mode === "apply"
+          ? `Applied ${stash.ref}.`
+          : `Popped ${stash.ref}.`,
+      );
+      await onRefresh();
+    } catch (caught) {
+      setToast(
+        caught instanceof Error
+          ? caught.message
+          : `Could not ${mode} ${stash.ref}.`,
+      );
+      try {
+        setStashes((await api.stashes(selectedId)).stashes);
+      } catch {
+        // Preserve the actionable Git error if the refresh also fails.
+      }
+      await onRefresh();
+    } finally {
+      setStashBusy(null);
+    }
+  }
   async function openRunMenu(repositoryId: string) {
     setTerminalError(null);
     if (runMenuOpen) {
@@ -2581,6 +2850,7 @@ export function RepositoryWorkspace({
           onToggleArchived={(groupId, archived) =>
             void toggleArchived(groupId, archived)
           }
+          onRenameRepository={renameRepository}
           onOpenBranches={(repositoryId, anchor) =>
             void openBranchPicker(repositoryId, anchor)
           }
@@ -2594,11 +2864,11 @@ export function RepositoryWorkspace({
                 <div className="repository-header__top">
                   <RepositoryMark repository={selectedRepository} size="header" />
                   <div>
-                    <h2>{selectedRepository.id}</h2>
+                    <h2>{repositoryDisplayName(selectedRepository)}</h2>
                     <button
                       className="repository-header__branch"
                       type="button"
-                      aria-label={`Switch branch for ${selectedRepository.id}`}
+                      aria-label={`Switch branch for ${repositoryDisplayName(selectedRepository)}`}
                       data-tooltip="Switch branch"
                       onClick={(event) =>
                         void openBranchPicker(

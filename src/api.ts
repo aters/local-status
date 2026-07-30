@@ -62,8 +62,10 @@ export const api = {
   scripts: (repositoryId: string) => bridge().repositories.scripts(repositoryId),
   setFavourite: (groupId: string, favourite: boolean) =>
     bridge().repositories.setFavourite(groupId, favourite),
-  setArchived: (groupId: string, archived: boolean) =>
-    bridge().repositories.setArchived(groupId, archived),
+  setArchived: (repositoryId: string, archived: boolean) =>
+    bridge().repositories.setArchived(repositoryId, archived),
+  renameRepository: (repositoryId: string, name: string) =>
+    bridge().repositories.rename(repositoryId, name),
   branches: (repositoryId: string) =>
     bridge().repositories.branches(repositoryId),
   switchBranch: (repositoryId: string, targetRef: string) =>

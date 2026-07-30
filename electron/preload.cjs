@@ -50,8 +50,10 @@ contextBridge.exposeInMainWorld("localStatus", {
     scripts: (repositoryId) => invoke("repositories:scripts", { repositoryId }),
     setFavourite: (groupId, favourite) =>
       invoke("repositories:set-favourite", { groupId, favourite }),
-    setArchived: (groupId, archived) =>
-      invoke("repositories:set-archived", { groupId, archived }),
+    setArchived: (repositoryId, archived) =>
+      invoke("repositories:set-archived", { repositoryId, archived }),
+    rename: (repositoryId, name) =>
+      invoke("repositories:rename", { repositoryId, name }),
     branches: (repositoryId) =>
       invoke("repositories:branches", { repositoryId }),
     switchBranch: (repositoryId, targetRef) =>

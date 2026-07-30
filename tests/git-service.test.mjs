@@ -723,6 +723,14 @@ describe("local Git integration", () => {
       outgoing: 0,
     });
     expect(summaries.repositories[0].summary.files).toBeGreaterThanOrEqual(7);
+    const archived = await listRepositorySummaries({
+      archivedRepositoryIds: ["product-api"],
+    });
+    expect(archived.repositories[0]).toMatchObject({
+      id: "product-api",
+      archived: true,
+      branch: null,
+    });
 
     const changes = await repositoryChanges("product-api");
     expect(changes.changes).toEqual(
@@ -812,13 +820,26 @@ describe("local Git integration", () => {
     ).rejects.toBeInstanceOf(GitServiceError);
   });
 
-  it("excludes the workspace root, reports unborn/detached repositories, and deduplicates symlinks", async () => {
+  it("uses the workspace root as the repository when it is a Git root", async () => {
+    const repository = temporaryDirectory("local-status-root-repository-");
+    execFileSync("git", ["init", "-b", "main", repository], { stdio: "ignore" });
+    configureUser(repository);
+    writeFileSync(join(repository, "tracked.txt"), "workspace root\n");
+    git(repository, "add", "tracked.txt");
+    git(repository, "commit", "-m", "Workspace root");
+
+    setWorkspaceRoot(repository);
+    const result = await listRepositorySummaries();
+
+    expect(result.repositories).toHaveLength(1);
+    expect(result.repositories[0]).toMatchObject({
+      id: repository.split("/").pop(),
+      branch: "main",
+    });
+  });
+
+  it("reports unborn/detached child repositories and deduplicates symlinks", async () => {
     const workspace = temporaryDirectory("local-status-discovery-");
-    execFileSync("git", ["init", "-b", "main", workspace], { stdio: "ignore" });
-    configureUser(workspace);
-    writeFileSync(join(workspace, "root.txt"), "workspace root\n");
-    git(workspace, "add", "root.txt");
-    git(workspace, "commit", "-m", "Workspace root");
 
     const unborn = join(workspace, "empty-repo");
     const detached = join(workspace, "detached-repo");

@@ -4900,7 +4900,8 @@ button.workspace-menu__item:focus-visible {
 }
 
 .repository-row:hover,
-.repository-row:focus-within {
+.repository-row:focus-within,
+.repository-row.is-context-menu-open {
   grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
@@ -4978,6 +4979,7 @@ button.workspace-menu__item:focus-visible {
 
 .repository-row:hover .repository-row__actions,
 .repository-row:focus-within .repository-row__actions,
+.repository-row.is-context-menu-open .repository-row__actions,
 .repository-group__header:hover .repository-row__actions,
 .repository-group__header:focus-within .repository-row__actions {
   width: auto;
@@ -4986,7 +4988,7 @@ button.workspace-menu__item:focus-visible {
 }
 
 .repository-favourite,
-.repository-archive-action {
+.repository-overflow-action {
   display: grid;
   width: 26px;
   height: 26px;
@@ -5001,11 +5003,11 @@ button.workspace-menu__item:focus-visible {
 }
 
 .repository-row:hover .repository-favourite,
-.repository-row:hover .repository-archive-action,
+.repository-row:hover .repository-overflow-action,
+.repository-row.is-context-menu-open .repository-overflow-action,
 .repository-group__header:hover .repository-favourite,
-.repository-group__header:hover .repository-archive-action,
 .repository-favourite:focus-visible,
-.repository-archive-action:focus-visible {
+.repository-overflow-action:focus-visible {
   opacity: 1;
 }
 
@@ -5015,7 +5017,7 @@ button.workspace-menu__item:focus-visible {
   background: color-mix(in srgb, var(--amber) 11%, transparent);
 }
 
-.repository-archive-action:hover {
+.repository-overflow-action:hover {
   color: var(--green);
   background: color-mix(in srgb, var(--green) 11%, transparent);
 }
@@ -5074,6 +5076,91 @@ button.workspace-menu__item:focus-visible {
   display: grid;
   min-width: 0;
   gap: 2px;
+}
+
+.repository-row__rename {
+  display: grid;
+  min-width: 0;
+  grid-column: 1;
+  grid-row: 1;
+  grid-template-columns: 28px minmax(0, 1fr) 26px 26px;
+  align-items: center;
+  gap: 5px;
+}
+
+.repository-row__rename input {
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--green);
+  border-radius: 6px;
+  outline: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-control);
+  background: var(--surface-2);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--green) 10%, transparent);
+}
+
+.repository-row__rename button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--green);
+  background: transparent;
+  cursor: pointer;
+}
+
+.repository-row__rename button:hover:not(:disabled),
+.repository-row__rename button:focus-visible {
+  background: color-mix(in srgb, var(--green) 11%, transparent);
+}
+
+.repository-row__rename button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.repository-context-menu {
+  position: fixed;
+  z-index: 210;
+  display: grid;
+  width: 176px;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-1);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.38);
+}
+
+.repository-context-menu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-soft);
+  font-size: var(--font-control);
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.repository-context-menu button:hover,
+.repository-context-menu button:focus-visible {
+  color: var(--text);
+  background: var(--surface-3);
+}
+
+.repository-context-menu button:last-child {
+  color: var(--text-muted);
 }
 
 .repository-group__header strong,

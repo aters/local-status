@@ -45,6 +45,7 @@ export interface Commit {
 
 export interface RepositorySummary {
   id: string;
+  displayName?: string;
   groupId: string;
   groupName: string;
   remoteIdentity: string | null;
@@ -436,9 +437,10 @@ export interface LocalStatusBridge {
       favourite: boolean,
     ): Promise<RepositoriesResponse>;
     setArchived(
-      groupId: string,
+      repositoryId: string,
       archived: boolean,
     ): Promise<RepositoriesResponse>;
+    rename(repositoryId: string, name: string): Promise<RepositoriesResponse>;
     branches(repositoryId: string): Promise<RepositoryBranches>;
     switchBranch(
       repositoryId: string,

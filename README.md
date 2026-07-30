@@ -9,7 +9,7 @@ in one folder.
 
 ## Features
 
-- Direct-child repository discovery
+- Selected-root or direct-child repository discovery
 - Working changes, commits, file trees, and incoming/outgoing status
 - Side-by-side and inline Monaco diffs with rendered Markdown previews
 - Stage, unstage, stash, commit, revert, fetch, and fast-forward-only sync
@@ -50,8 +50,8 @@ npm install
 npm start
 ```
 
-On first launch, choose a folder whose immediate children are Git repositories.
-The workspace folder itself does not need to be a repository.
+On first launch, choose either a Git repository or a folder whose immediate
+children are Git repositories.
 
 ## Usage
 
@@ -141,8 +141,9 @@ npm run postinstall
 
 ### No repositories appear
 
-Local Status scans only immediate child folders. Nested repositories and the
-selected workspace root are intentionally excluded.
+When the selected folder is a Git repository, Local Status shows that repository.
+Otherwise, it scans immediate child folders. More deeply nested repositories are
+not included.
 
 ### AI message generation is unavailable
 

@@ -170,13 +170,19 @@ async function confirmStopForWorkspaceChange() {
 }
 
 async function repositoriesWithPreferences() {
-  const archived = new Set(
+  const archivedGroups = new Set(
     getWorkspaceRoot()
       ? settingsStore.archivedGroupsFor(getWorkspaceRoot())
       : [],
   );
+  const archivedRepositories = new Set(
+    getWorkspaceRoot()
+      ? settingsStore.archivedRepositoriesFor(getWorkspaceRoot())
+      : [],
+  );
   const response = await listRepositorySummaries({
-    archivedGroupIds: archived,
+    archivedGroupIds: archivedGroups,
+    archivedRepositoryIds: archivedRepositories,
   });
   const favourites = new Set(
     getWorkspaceRoot()
@@ -187,6 +193,9 @@ async function repositoriesWithPreferences() {
     ...response,
     repositories: response.repositories.map((repository) => ({
       ...repository,
+      displayName:
+        settingsStore.repositoryNameFor(getWorkspaceRoot(), repository.id) ??
+        repository.id,
       favourite: favourites.has(repository.groupId),
     })),
   };
@@ -197,7 +206,13 @@ async function requireActiveRepository(repositoryId) {
   const archived = new Set(
     settingsStore.archivedGroupsFor(getWorkspaceRoot()),
   );
-  if (archived.has(repository.groupId)) {
+  const archivedRepositories = new Set(
+    settingsStore.archivedRepositoriesFor(getWorkspaceRoot()),
+  );
+  if (
+    archived.has(repository.groupId) ||
+    archivedRepositories.has(repository.id)
+  ) {
     throw new Error("Restore this repository before running Git operations.");
   }
   return repository;
@@ -498,6 +513,8 @@ function registerIpc() {
     const groupId = requireString(request.groupId, "repository group", 100);
     const response = await listRepositorySummaries({
       archivedGroupIds: settingsStore.archivedGroupsFor(getWorkspaceRoot()),
+      archivedRepositoryIds:
+        settingsStore.archivedRepositoriesFor(getWorkspaceRoot()),
     });
     if (!response.repositories.some((repository) => repository.groupId === groupId)) {
       throw new Error("Repository group not found.");
@@ -511,18 +528,60 @@ function registerIpc() {
   });
   handle("repositories:set-archived", async (payload) => {
     const request = requireObject(payload);
-    const groupId = requireString(request.groupId, "repository group", 100);
+    const repositoryId = requireString(request.repositoryId, "repository", 255);
     const archivedGroups = settingsStore.archivedGroupsFor(getWorkspaceRoot());
     const response = await listRepositorySummaries({
       archivedGroupIds: archivedGroups,
+      archivedRepositoryIds:
+        settingsStore.archivedRepositoriesFor(getWorkspaceRoot()),
     });
-    if (!response.repositories.some((repository) => repository.groupId === groupId)) {
-      throw new Error("Repository group not found.");
+    const repository = response.repositories.find(
+      (entry) => entry.id === repositoryId,
+    );
+    if (!repository) {
+      throw new Error("Repository not found.");
     }
-    await settingsStore.setArchivedGroup(
+    if (!request.archived && archivedGroups.includes(repository.groupId)) {
+      await settingsStore.setArchivedGroup(
+        getWorkspaceRoot(),
+        repository.groupId,
+        false,
+      );
+      for (const member of response.repositories) {
+        if (
+          member.groupId === repository.groupId &&
+          member.id !== repositoryId
+        ) {
+          await settingsStore.setArchivedRepository(
+            getWorkspaceRoot(),
+            member.id,
+            true,
+          );
+        }
+      }
+    }
+    await settingsStore.setArchivedRepository(
       getWorkspaceRoot(),
-      groupId,
+      repositoryId,
       request.archived === true,
+    );
+    return repositoriesWithPreferences();
+  });
+  handle("repositories:rename", async (payload) => {
+    const request = requireObject(payload);
+    const repositoryId = requireString(request.repositoryId, "repository", 255);
+    const response = await listRepositorySummaries({
+      archivedGroupIds: settingsStore.archivedGroupsFor(getWorkspaceRoot()),
+      archivedRepositoryIds:
+        settingsStore.archivedRepositoriesFor(getWorkspaceRoot()),
+    });
+    if (!response.repositories.some((repository) => repository.id === repositoryId)) {
+      throw new Error("Repository not found.");
+    }
+    await settingsStore.setRepositoryName(
+      getWorkspaceRoot(),
+      repositoryId,
+      requireString(request.name, "worktree name", 80).trim(),
     );
     return repositoriesWithPreferences();
   });
@@ -568,6 +627,8 @@ function registerIpc() {
   handle("repositories:fetch-all", () =>
     fetchAll({
       excludeGroupIds: settingsStore.archivedGroupsFor(getWorkspaceRoot()),
+      excludeRepositoryIds:
+        settingsStore.archivedRepositoriesFor(getWorkspaceRoot()),
     }),
   );
   handle("repositories:prepare-commit", (payload) =>
@@ -722,6 +783,8 @@ function registerIpc() {
     const repositories = await discoverRepositories({ refresh: true });
     return githubService.list([...repositories.values()], {
       excludeGroupIds: settingsStore.archivedGroupsFor(getWorkspaceRoot()),
+      excludeRepositoryIds:
+        settingsStore.archivedRepositoriesFor(getWorkspaceRoot()),
     });
   });
   handle("pull-requests:open", async (payload) => {

@@ -50,7 +50,7 @@ describe("SettingsStore", () => {
     writeFileSync(
       settingsPath,
       JSON.stringify({
-        version: 5,
+        version: 6,
         lastWorkspacePath: null,
         recentWorkspaces: [],
         profiles: {},
@@ -71,6 +71,12 @@ describe("SettingsStore", () => {
     const store = new SettingsStore(settingsPath);
     await store.load();
     await store.rememberWorkspace(workspace);
+    await store.setRepositoryName(
+      workspace,
+      "checkout-feature",
+      "Feature checkout",
+    );
+    await store.setArchivedRepository(workspace, "checkout-archived", true);
     await store.saveProfile(workspace, {
       id: "profile-00000000000000000001",
       repositoryId: "api",
@@ -89,6 +95,12 @@ describe("SettingsStore", () => {
 
     expect(restored.data.lastWorkspacePath).toBe(workspace);
     expect(restored.recentWorkspaceSummaries()[0]).toMatchObject({ path: workspace });
+    expect(
+      restored.repositoryNameFor(workspace, "checkout-feature"),
+    ).toBe("Feature checkout");
+    expect(restored.archivedRepositoriesFor(workspace)).toEqual([
+      "checkout-archived",
+    ]);
     expect(restored.profilesFor(workspace)).toEqual([
       expect.objectContaining({ name: "API", executable: "python3" }),
     ]);
@@ -131,7 +143,7 @@ describe("SettingsStore", () => {
 
     await store.load();
 
-    expect(store.data.version).toBe(5);
+    expect(store.data.version).toBe(6);
     expect(store.data.lastWorkspacePath).toBe("/tmp/legacy-workspace");
     expect(store.profilesFor("/tmp/legacy-workspace")).toHaveLength(1);
     expect(store.aiSettings()).toEqual({
@@ -180,6 +192,40 @@ describe("SettingsStore", () => {
     expect(store.data.lastWorkspacePath).toBeNull();
     expect(readdirSync(directory).some((entry) => entry.startsWith("settings.json.corrupt-"))).toBe(
       true,
+    );
+  });
+
+  it("ignores invalid saved worktree names and validates new names", async () => {
+    const directory = temporaryDirectory("local-status-worktree-names-");
+    const settingsPath = join(directory, "settings.json");
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        version: 6,
+        lastWorkspacePath: "/tmp/workspace",
+        recentWorkspaces: ["/tmp/workspace"],
+        repositoryNames: {
+          "/tmp/workspace": {
+            "checkout-valid": "  Product feature  ",
+            "checkout-invalid": " ",
+          },
+        },
+      }),
+    );
+    const store = new SettingsStore(settingsPath);
+
+    await store.load();
+
+    expect(
+      store.repositoryNameFor("/tmp/workspace", "checkout-valid"),
+    ).toBe("Product feature");
+    expect(
+      store.repositoryNameFor("/tmp/workspace", "checkout-invalid"),
+    ).toBeNull();
+    await expect(
+      store.setRepositoryName("/tmp/workspace", "checkout-valid", " "),
+    ).rejects.toThrow(
+      "Worktree names must be between 1 and 80 characters.",
     );
   });
 });

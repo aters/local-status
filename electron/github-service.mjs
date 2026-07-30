@@ -344,15 +344,20 @@ export class GithubService {
     return deduplicateAndSort(collected);
   }
 
-  async list(repositories, { excludeGroupIds = [] } = {}) {
+  async list(
+    repositories,
+    { excludeGroupIds = [], excludeRepositoryIds = [] } = {},
+  ) {
     const executable = await this.resolveExecutable();
     const account = await this.activeAccount(executable);
     const excluded = new Set(excludeGroupIds);
+    const excludedRepositories = new Set(excludeRepositoryIds);
     const uniqueGroups = new Map();
     for (const repository of repositories) {
       if (
         !repository ||
         excluded.has(repository.groupId) ||
+        excludedRepositories.has(repository.id) ||
         uniqueGroups.has(repository.groupId)
       ) {
         continue;

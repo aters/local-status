@@ -2,8 +2,9 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 import themeManifest from "../shared/themes.json" with { type: "json" };
 
-const SETTINGS_VERSION = 5;
+const SETTINGS_VERSION = 6;
 const MAX_RECENT_WORKSPACES = 8;
+const MAX_REPOSITORY_NAME_LENGTH = 80;
 const THEMES = new Set(Object.keys(themeManifest));
 
 function defaults() {
@@ -11,10 +12,12 @@ function defaults() {
     version: SETTINGS_VERSION,
     lastWorkspacePath: null,
     recentWorkspaces: [],
+    repositoryNames: {},
     profiles: {},
     theme: "green",
     favouriteRepositoryGroups: {},
     archivedRepositoryGroups: {},
+    archivedRepositories: {},
     ai: {
       provider: "codex",
       models: {
@@ -54,7 +57,7 @@ function parseSettings(value) {
   if (
     !value ||
     typeof value !== "object" ||
-    ![1, 2, 3, 4, SETTINGS_VERSION].includes(value.version)
+    ![1, 2, 3, 4, 5, SETTINGS_VERSION].includes(value.version)
   ) {
     return defaults();
   }
@@ -71,6 +74,31 @@ function parseSettings(value) {
     recentWorkspaces: isStringArray(value.recentWorkspaces)
       ? value.recentWorkspaces.slice(0, MAX_RECENT_WORKSPACES)
       : [],
+    repositoryNames:
+      value.repositoryNames &&
+      typeof value.repositoryNames === "object" &&
+      !Array.isArray(value.repositoryNames)
+        ? Object.fromEntries(
+            Object.entries(value.repositoryNames)
+              .filter(
+                ([, names]) =>
+                  names && typeof names === "object" && !Array.isArray(names),
+              )
+              .map(([workspace, names]) => [
+                workspace,
+                Object.fromEntries(
+                  Object.entries(names)
+                    .filter(
+                      ([, name]) =>
+                        typeof name === "string" &&
+                        name.trim().length > 0 &&
+                        name.trim().length <= MAX_REPOSITORY_NAME_LENGTH,
+                    )
+                    .map(([groupId, name]) => [groupId, name.trim()]),
+                ),
+              ]),
+          )
+        : {},
     profiles,
     theme: THEMES.has(value.theme) ? value.theme : "green",
     favouriteRepositoryGroups:
@@ -87,6 +115,14 @@ function parseSettings(value) {
       typeof value.archivedRepositoryGroups === "object"
         ? Object.fromEntries(
             Object.entries(value.archivedRepositoryGroups)
+              .filter(([, entries]) => isStringArray(entries))
+              .map(([workspace, entries]) => [workspace, [...new Set(entries)]]),
+          )
+        : {},
+    archivedRepositories:
+      value.archivedRepositories && typeof value.archivedRepositories === "object"
+        ? Object.fromEntries(
+            Object.entries(value.archivedRepositories)
               .filter(([, entries]) => isStringArray(entries))
               .map(([workspace, entries]) => [workspace, [...new Set(entries)]]),
           )
@@ -167,6 +203,25 @@ export class SettingsStore {
     await this.save();
   }
 
+  repositoryNameFor(workspacePath, repositoryId) {
+    return this.data.repositoryNames[workspacePath]?.[repositoryId] ?? null;
+  }
+
+  async setRepositoryName(workspacePath, repositoryId, name) {
+    const normalizedName = typeof name === "string" ? name.trim() : "";
+    if (!normalizedName || normalizedName.length > MAX_REPOSITORY_NAME_LENGTH) {
+      throw new Error(
+        `Worktree names must be between 1 and ${MAX_REPOSITORY_NAME_LENGTH} characters.`,
+      );
+    }
+    this.data.repositoryNames[workspacePath] = {
+      ...(this.data.repositoryNames[workspacePath] ?? {}),
+      [repositoryId]: normalizedName,
+    };
+    await this.save();
+    return normalizedName;
+  }
+
   profilesFor(workspacePath) {
     return [...(this.data.profiles[workspacePath] ?? [])];
   }
@@ -224,6 +279,19 @@ export class SettingsStore {
     this.data.archivedRepositoryGroups[workspacePath] = [...groups];
     await this.save();
     return this.archivedGroupsFor(workspacePath);
+  }
+
+  archivedRepositoriesFor(workspacePath) {
+    return [...(this.data.archivedRepositories[workspacePath] ?? [])];
+  }
+
+  async setArchivedRepository(workspacePath, repositoryId, archived) {
+    const repositories = new Set(this.archivedRepositoriesFor(workspacePath));
+    if (archived) repositories.add(repositoryId);
+    else repositories.delete(repositoryId);
+    this.data.archivedRepositories[workspacePath] = [...repositories];
+    await this.save();
+    return this.archivedRepositoriesFor(workspacePath);
   }
 
   aiSettings() {
