@@ -24,11 +24,11 @@ import {
   Minus,
   MoreHorizontal,
   Pencil,
+  Pin,
   Plus,
   RefreshCw,
   Search,
   Sparkles,
-  Star,
   SquareTerminal,
   Play,
   Trash2,
@@ -44,6 +44,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
@@ -86,7 +87,11 @@ import { FileTree } from "./FileTree";
 import { RepositoryMark } from "./RepositoryMark";
 import { StashModal } from "./StashModal";
 import { SyncRecoveryModal } from "./SyncRecoveryModal";
-import { repositoryHealth } from "../repository-mark";
+import {
+  repositoryHealth,
+  repositoryMarkVisuals,
+  type RepositoryMarkVisual,
+} from "../repository-mark";
 
 const MonacoDiff = lazy(() => import("./MonacoDiff"));
 const TOAST_DURATION_MS = 4_000;
@@ -99,6 +104,28 @@ type RepoFilter =
   | "errors";
 type WorkingChangeScope = Exclude<ChangeScope, "commit" | "stash">;
 type ChangeGroupKey = "conflict" | "staged" | "unstaged";
+
+type RepositoryMenuState =
+  | {
+      kind: "repository";
+      repositoryId: string;
+      favouriteControl?: {
+        groupId: string;
+        favourite: boolean;
+      };
+      top: number;
+      left: number;
+      trigger: HTMLButtonElement;
+    }
+  | {
+      kind: "group";
+      groupId: string;
+      groupName: string;
+      favourite: boolean;
+      top: number;
+      left: number;
+      trigger: HTMLButtonElement;
+    };
 
 interface CompareRequest {
   path: string;
@@ -412,6 +439,7 @@ function RepositoryNavigator({
   onToggleArchived,
   onRenameRepository,
   onOpenBranches,
+  markVisuals,
 }: {
   repositories: RepositorySummary[];
   rootKind: RepositoriesResponse["rootKind"];
@@ -425,6 +453,7 @@ function RepositoryNavigator({
   onToggleArchived: (repositoryId: string, archived: boolean) => void;
   onRenameRepository: (repositoryId: string, name: string) => Promise<boolean>;
   onOpenBranches: (repositoryId: string, anchor: HTMLElement) => void;
+  markVisuals: ReadonlyMap<string, RepositoryMarkVisual>;
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<RepoFilter>("all");
@@ -451,11 +480,8 @@ function RepositoryNavigator({
   const [repositoryNameDraft, setRepositoryNameDraft] = useState("");
   const [repositoryNameBusy, setRepositoryNameBusy] = useState(false);
   const repositoryNameInputRef = useRef<HTMLInputElement>(null);
-  const [repositoryMenu, setRepositoryMenu] = useState<{
-    repositoryId: string;
-    top: number;
-    left: number;
-  } | null>(null);
+  const [repositoryMenu, setRepositoryMenu] =
+    useState<RepositoryMenuState | null>(null);
   const repositoryMenuRef = useRef<HTMLDivElement>(null);
   const { groups, archivedGroups } = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -562,21 +588,34 @@ function RepositoryNavigator({
 
   useEffect(() => {
     if (!repositoryMenu) return;
+    const openMenu = repositoryMenu;
+    const focusFrame = window.requestAnimationFrame(() => {
+      repositoryMenuRef.current
+        ?.querySelector<HTMLButtonElement>(
+          '[role="menuitem"]:not(:disabled)',
+        )
+        ?.focus();
+    });
     function closeOnOutsidePointer(event: PointerEvent) {
       const target = event.target;
       if (
         target instanceof Node &&
-        !repositoryMenuRef.current?.contains(target)
+        !repositoryMenuRef.current?.contains(target) &&
+        !openMenu.trigger.contains(target)
       ) {
         setRepositoryMenu(null);
       }
     }
     function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setRepositoryMenu(null);
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      openMenu.trigger.focus();
+      setRepositoryMenu(null);
     }
     document.addEventListener("pointerdown", closeOnOutsidePointer, true);
     document.addEventListener("keydown", closeOnEscape, true);
     return () => {
+      window.cancelAnimationFrame(focusFrame);
       document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
       document.removeEventListener("keydown", closeOnEscape, true);
     };
@@ -598,14 +637,86 @@ function RepositoryNavigator({
   function openRepositoryMenu(
     repository: RepositorySummary,
     anchor: HTMLButtonElement,
+    favouriteControl?: { groupId: string; favourite: boolean },
   ) {
+    if (
+      repositoryMenu?.kind === "repository" &&
+      repositoryMenu.repositoryId === repository.id
+    ) {
+      setRepositoryMenu(null);
+      return;
+    }
     const bounds = anchor.getBoundingClientRect();
     const width = 176;
     setRepositoryMenu({
+      kind: "repository",
       repositoryId: repository.id,
-      top: Math.min(bounds.bottom + 5, window.innerHeight - 104),
+      favouriteControl,
+      top: Math.min(bounds.bottom + 5, window.innerHeight - 150),
       left: Math.max(8, Math.min(bounds.right - width, window.innerWidth - width - 8)),
+      trigger: anchor,
     });
+  }
+
+  function openRepositoryGroupMenu(
+    group: { id: string; name: string; favourite: boolean },
+    anchor: HTMLButtonElement,
+  ) {
+    if (
+      repositoryMenu?.kind === "group" &&
+      repositoryMenu.groupId === group.id
+    ) {
+      setRepositoryMenu(null);
+      return;
+    }
+    const bounds = anchor.getBoundingClientRect();
+    const width = 176;
+    setRepositoryMenu({
+      kind: "group",
+      groupId: group.id,
+      groupName: group.name,
+      favourite: group.favourite,
+      top: Math.min(bounds.bottom + 5, window.innerHeight - 64),
+      left: Math.max(8, Math.min(bounds.right - width, window.innerWidth - width - 8)),
+      trigger: anchor,
+    });
+  }
+
+  function closeRepositoryMenu(restoreFocus = false) {
+    const trigger = repositoryMenu?.trigger;
+    if (restoreFocus && trigger) trigger.focus();
+    setRepositoryMenu(null);
+  }
+
+  function navigateRepositoryMenu(
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ) {
+    const items = [
+      ...(event.currentTarget.querySelectorAll<HTMLButtonElement>(
+        '[role="menuitem"]:not(:disabled)',
+      ) ?? []),
+    ];
+    if (!items.length) return;
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowDown") {
+      nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % items.length;
+    } else if (event.key === "ArrowUp") {
+      nextIndex =
+        currentIndex < 0
+          ? items.length - 1
+          : (currentIndex - 1 + items.length) % items.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = items.length - 1;
+    } else if (event.key === "Tab") {
+      setRepositoryMenu(null);
+      return;
+    }
+    if (nextIndex === null) return;
+    event.preventDefault();
+    items[nextIndex]?.focus();
   }
 
   function beginRepositoryRename(repository: RepositorySummary) {
@@ -638,21 +749,15 @@ function RepositoryNavigator({
     }
   }
 
-  function favouriteAction(groupId: string, name: string, favourite: boolean) {
+  function pinnedIndicator(name: string) {
     return (
-      <button
-        className={`repository-favourite ${favourite ? "is-active" : ""}`}
-        type="button"
-        aria-label={
-          favourite
-            ? `Remove ${name} from favourites`
-            : `Add ${name} to favourites`
-        }
-        data-tooltip={favourite ? "Remove from favourites" : "Add to favourites"}
-        onClick={() => onToggleFavourite(groupId, !favourite)}
+      <span
+        className="repository-pin-indicator"
+        aria-label={`${name} is pinned`}
+        data-tooltip="Pinned"
       >
-        <Star size={14} fill="currentColor" />
-      </button>
+        <Pin size={12} />
+      </span>
     );
   }
 
@@ -668,7 +773,8 @@ function RepositoryNavigator({
         className={`repository-row repository-row--${repositoryHealth(repository)} ${
           selected ? "is-selected" : ""
         } ${
-          repositoryMenu?.repositoryId === repository.id
+          repositoryMenu?.kind === "repository" &&
+          repositoryMenu.repositoryId === repository.id
             ? "is-context-menu-open"
             : ""
         }`}
@@ -688,7 +794,10 @@ function RepositoryNavigator({
               cancelRepositoryRename();
             }}
           >
-            <RepositoryMark repository={repository} />
+            <RepositoryMark
+              repository={repository}
+              visual={markVisuals.get(repository.id)}
+            />
             <input
               ref={repositoryNameInputRef}
               value={repositoryNameDraft}
@@ -726,25 +835,32 @@ function RepositoryNavigator({
             className="repository-row__select"
             type="button"
             aria-current={selected ? "true" : undefined}
-            aria-disabled={repository.archived}
             disabled={repository.archived}
             onClick={() => {
               onSelect(repository.id);
               onCloseMobile();
             }}
           >
-            <RepositoryMark repository={repository} />
-            <span className="repository-row__content">
-              <span className="repository-row__title">
-                <span className="repository-row__name">{displayName}</span>
-                {repository.isWorkspaceRoot && (
-                  <span
-                    className="repository-root-badge"
-                    title="Selected folder"
-                  >
-                    Root
-                  </span>
-                )}
+            <span className="repository-row__identity">
+              <RepositoryMark
+                repository={repository}
+                visual={markVisuals.get(repository.id)}
+              />
+              <span className="repository-row__content">
+                <span className="repository-row__title">
+                  <span className="repository-row__name">{displayName}</span>
+                  {repository.isWorkspaceRoot && (
+                    <span
+                      className="repository-root-badge"
+                      title="Selected folder"
+                    >
+                      Root
+                    </span>
+                  )}
+                  {favouriteControl?.favourite
+                    ? pinnedIndicator(repositoryGroupName(repository))
+                    : null}
+                </span>
               </span>
             </span>
           </button>
@@ -801,22 +917,22 @@ function RepositoryNavigator({
           )}
         </span>
         <span className="repository-row__actions">
-          {favouriteControl && !repository.archived
-            ? favouriteAction(
-                favouriteControl.groupId,
-                repositoryGroupName(repository),
-                favouriteControl.favourite,
-              )
-            : null}
           {!renaming && (
             <button
               className="repository-overflow-action"
               type="button"
               aria-label={`More actions for ${displayName}`}
               aria-haspopup="menu"
-              aria-expanded={repositoryMenu?.repositoryId === repository.id}
+              aria-expanded={
+                repositoryMenu?.kind === "repository" &&
+                repositoryMenu.repositoryId === repository.id
+              }
               onClick={(event) =>
-                openRepositoryMenu(repository, event.currentTarget)
+                openRepositoryMenu(
+                  repository,
+                  event.currentTarget,
+                  repository.archived ? undefined : favouriteControl,
+                )
               }
             >
               <MoreHorizontal size={16} />
@@ -839,6 +955,7 @@ function RepositoryNavigator({
       <section className="repository-group" key={group.id} role="listitem">
         <div className="repository-group__header">
           <button
+            className="repository-group__toggle"
             type="button"
             aria-expanded={expandedGroups.has(group.id)}
             onClick={() => toggleGroup(group.id)}
@@ -858,36 +975,51 @@ function RepositoryNavigator({
                     Root
                   </span>
                 )}
+                {group.favourite ? pinnedIndicator(group.name) : null}
               </span>
               <small>{group.members.length} checkouts</small>
             </span>
+            <span className="repository-row__signals">
+              {group.paused > 0 && (
+                <StatusBadge
+                  tone="paused"
+                  title={`${group.paused} paused Git ${
+                    group.paused === 1 ? "operation" : "operations"
+                  }`}
+                >
+                  <GitCompareArrows size={10} />
+                  {group.paused}
+                </StatusBadge>
+              )}
+              {group.files > 0 && (
+                <StatusBadge tone="dirty">{group.files}</StatusBadge>
+              )}
+              {group.incoming > 0 && (
+                <StatusBadge tone="incoming">{group.incoming}</StatusBadge>
+              )}
+              {group.outgoing > 0 && (
+                <StatusBadge tone="outgoing">{group.outgoing}</StatusBadge>
+              )}
+            </span>
           </button>
-          <span className="repository-row__signals">
-            {group.paused > 0 && (
-              <StatusBadge
-                tone="paused"
-                title={`${group.paused} paused Git ${
-                  group.paused === 1 ? "operation" : "operations"
-                }`}
-              >
-                <GitCompareArrows size={10} />
-                {group.paused}
-              </StatusBadge>
-            )}
-            {group.files > 0 && (
-              <StatusBadge tone="dirty">{group.files}</StatusBadge>
-            )}
-            {group.incoming > 0 && (
-              <StatusBadge tone="incoming">{group.incoming}</StatusBadge>
-            )}
-            {group.outgoing > 0 && (
-              <StatusBadge tone="outgoing">{group.outgoing}</StatusBadge>
-            )}
-          </span>
           <span className="repository-row__actions">
-            {!group.archived
-              ? favouriteAction(group.id, group.name, group.favourite)
-              : null}
+            {!group.archived && (
+              <button
+                className="repository-overflow-action"
+                type="button"
+                aria-label={`More actions for ${group.name}`}
+                aria-haspopup="menu"
+                aria-expanded={
+                  repositoryMenu?.kind === "group" &&
+                  repositoryMenu.groupId === group.id
+                }
+                onClick={(event) =>
+                  openRepositoryGroupMenu(group, event.currentTarget)
+                }
+              >
+                <MoreHorizontal size={16} />
+              </button>
+            )}
           </span>
         </div>
         {expandedGroups.has(group.id) && (
@@ -904,11 +1036,15 @@ function RepositoryNavigator({
   }
 
   const showsArchivedGroups = filter === "all" && archivedGroups.length > 0;
-  const menuRepository = repositoryMenu
+  const menuRepository =
+    repositoryMenu?.kind === "repository"
     ? repositories.find(
         (repository) => repository.id === repositoryMenu.repositoryId,
       ) ?? null
     : null;
+  const repositoryMenuVisible =
+    repositoryMenu &&
+    (repositoryMenu.kind === "group" || Boolean(menuRepository));
 
   return (
     <>
@@ -1021,42 +1157,92 @@ function RepositoryNavigator({
         Local Git data only
       </div>
       </aside>
-      {repositoryMenu &&
-        menuRepository &&
+      {repositoryMenuVisible &&
+        repositoryMenu &&
         createPortal(
           <div
             ref={repositoryMenuRef}
             className="repository-context-menu"
             role="menu"
-            aria-label={`Actions for ${repositoryDisplayName(menuRepository)}`}
+            aria-label={`Actions for ${
+              repositoryMenu.kind === "group"
+                ? repositoryMenu.groupName
+                : repositoryDisplayName(menuRepository!)
+            }`}
             style={{
               top: repositoryMenu.top,
               left: repositoryMenu.left,
             }}
+            onKeyDown={navigateRepositoryMenu}
           >
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => beginRepositoryRename(menuRepository)}
-            >
-              <Pencil size={14} />
-              Rename
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setRepositoryMenu(null);
-                onToggleArchived(menuRepository.id, !menuRepository.archived);
-              }}
-            >
-              {menuRepository.archived ? (
-                <ArchiveRestore size={14} />
-              ) : (
-                <Archive size={14} />
-              )}
-              {menuRepository.archived ? "Restore" : "Archive"}
-            </button>
+            {repositoryMenu.kind === "group" ? (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  closeRepositoryMenu(true);
+                  onToggleFavourite(
+                    repositoryMenu.groupId,
+                    !repositoryMenu.favourite,
+                  );
+                }}
+              >
+                <Pin size={14} />
+                {repositoryMenu.favourite ? "Unpin" : "Pin"}
+              </button>
+            ) : (
+              <>
+                {repositoryMenu.favouriteControl && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      closeRepositoryMenu(true);
+                      onToggleFavourite(
+                        repositoryMenu.favouriteControl!.groupId,
+                        !repositoryMenu.favouriteControl!.favourite,
+                      );
+                    }}
+                  >
+                    <Pin size={14} />
+                    {repositoryMenu.favouriteControl.favourite
+                      ? "Unpin"
+                      : "Pin"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => beginRepositoryRename(menuRepository!)}
+                >
+                  <Pencil size={14} />
+                  Rename
+                </button>
+                <button
+                  className={
+                    menuRepository!.archived
+                      ? undefined
+                      : "repository-context-menu__archive"
+                  }
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setRepositoryMenu(null);
+                    onToggleArchived(
+                      menuRepository!.id,
+                      !menuRepository!.archived,
+                    );
+                  }}
+                >
+                  {menuRepository!.archived ? (
+                    <ArchiveRestore size={14} />
+                  ) : (
+                    <Archive size={14} />
+                  )}
+                  {menuRepository!.archived ? "Restore" : "Archive"}
+                </button>
+              </>
+            )}
           </div>,
           document.body,
         )}
@@ -1709,6 +1895,10 @@ export function RepositoryWorkspace({
   );
   const activeRepositories = useMemo(
     () => repositories.filter((repository) => !repository.archived),
+    [repositories],
+  );
+  const markVisuals = useMemo(
+    () => repositoryMarkVisuals(repositories.map((repository) => repository.id)),
     [repositories],
   );
   const params = getParams();
@@ -3298,10 +3488,11 @@ export function RepositoryWorkspace({
                 void toggleArchived(groupId, archived)
               }
               onRenameRepository={renameRepository}
-              onOpenBranches={(repositoryId, anchor) =>
-                void openBranchPicker(repositoryId, anchor)
-              }
-            />
+          onOpenBranches={(repositoryId, anchor) =>
+            void openBranchPicker(repositoryId, anchor)
+          }
+          markVisuals={markVisuals}
+        />
             <ResizeHandle side="repository" onResize={resizeRepo} />
           </>
         )}
@@ -3311,7 +3502,11 @@ export function RepositoryWorkspace({
             <>
               <div className="repository-header">
                 <div className="repository-header__top">
-                  <RepositoryMark repository={selectedRepository} size="header" />
+                  <RepositoryMark
+                    repository={selectedRepository}
+                    size="header"
+                    visual={markVisuals.get(selectedRepository.id)}
+                  />
                   <div>
                     <div className="repository-header__title">
                       <h2>{repositoryDisplayName(selectedRepository)}</h2>

@@ -377,7 +377,7 @@ For more information, try '--help'.`, "Codex"),
     );
   });
 
-  it("builds interactive conflict agents with normal permissions and a bounded prompt", async () => {
+  it("builds sandboxed conflict agents without per-command approval prompts", async () => {
     const { directory, runner, settingsStore } = await createRunner();
 
     const codex = await runner.conflictResolutionSpec(
@@ -396,10 +396,11 @@ For more information, try '--help'.`, "Codex"),
         "--sandbox",
         "workspace-write",
         "--ask-for-approval",
-        "untrusted",
+        "never",
         "--no-alt-screen",
       ]),
     );
+    expect(codex.args).not.toContain("untrusted");
     expect(codex.args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
     expect(codex.args.at(-1)).toContain("Stop after the conflicts are resolved and staged");
     expect(codex.args.at(-1)).toContain("Do not run git rebase --continue");

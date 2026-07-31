@@ -526,7 +526,7 @@ export class AiRunner {
             "--sandbox",
             "workspace-write",
             "--ask-for-approval",
-            "untrusted",
+            "never",
             "--cd",
             repositoryPath,
             "--no-alt-screen",

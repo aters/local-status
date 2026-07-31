@@ -453,6 +453,74 @@ test("renders a cohesive dark theme across repository surfaces", async ({
   await browser.close();
 });
 
+test("keeps repository row targets stable and the row surface selectable", async ({
+}, testInfo) => {
+  const browser = await launchDesktop(9345);
+  const window = browser.contexts()[0].pages()[0];
+  await window.setViewportSize({ width: 920, height: 720 });
+  await window.getByRole("button", { name: "Open repositories" }).click();
+
+  const cleanSelect = window.getByRole("button", {
+    name: "Clean working tree clean-api",
+  });
+  const cleanRow = cleanSelect.locator("..");
+  const cleanActions = window.getByRole("button", {
+    name: "More actions for clean-api",
+  });
+  const columnsBeforeHover = await cleanRow.evaluate(
+    (element) => getComputedStyle(element).gridTemplateColumns,
+  );
+
+  await expect(cleanActions).toBeVisible();
+  await expect(cleanActions).toHaveCSS("opacity", "1");
+  await cleanRow.hover();
+  expect(
+    await cleanRow.evaluate(
+      (element) => getComputedStyle(element).gridTemplateColumns,
+    ),
+  ).toBe(columnsBeforeHover);
+
+  const cleanBounds = await cleanRow.boundingBox();
+  expect(cleanBounds).not.toBeNull();
+  await window.mouse.click(cleanBounds!.x + 4, cleanBounds!.y + 4);
+  await expect(
+    window.getByRole("heading", { name: "clean-api" }),
+  ).toBeVisible();
+
+  await window.getByRole("button", { name: "Open repositories" }).click();
+  const changedActions = window.getByRole("button", {
+    name: "More actions for changed-web",
+  });
+  await changedActions.click();
+  await expect(
+    window.getByRole("menu", { name: "Actions for changed-web" }),
+  ).toBeVisible();
+  await expect(
+    window.getByRole("heading", { name: "clean-api" }),
+  ).toBeVisible();
+  await window.keyboard.press("Escape");
+  await expect(changedActions).toBeFocused();
+
+  const changedRow = window
+    .getByRole("button", { name: "Uncommitted changes changed-web" })
+    .locator("..");
+  await changedRow
+    .getByRole("button", { name: "Switch branch for changed-web" })
+    .click();
+  await expect(
+    window.getByRole("heading", { name: "changed-web" }),
+  ).toBeVisible();
+  await expect(
+    window.getByRole("dialog", { name: "Switch branch for changed-web" }),
+  ).toBeVisible();
+
+  await window.screenshot({
+    path: testInfo.outputPath("repository-row-targets.png"),
+    animations: "disabled",
+  });
+  await browser.close();
+});
+
 test("renders and persists the Glass and Neumorphic theme systems", async ({
 }, testInfo) => {
   test.setTimeout(90_000);

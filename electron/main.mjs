@@ -995,7 +995,7 @@ function registerIpc() {
           title: `Let ${label} resolve repository conflicts?`,
           message: `${label} will be able to inspect and edit this repository.`,
           detail:
-            `An interactive ${label} CLI session will receive a focused conflict-resolution prompt. It may read files, edit conflicted files, run commands with normal approval prompts, and stage resolutions. Local Status instructs it not to continue or abort the Git operation, commit, push, or discard unrelated work.`,
+            `An interactive ${label} CLI session will receive a focused conflict-resolution prompt. It may read files, edit conflicted files, run repository-local commands, and stage resolutions. Codex sessions run without per-command prompts inside a workspace-write sandbox; blocked commands fail instead of gaining broader access. Local Status instructs the agent not to continue or abort the Git operation, commit, push, or discard unrelated work.`,
           buttons: ["Open interactive agent", "Cancel"],
           defaultId: 1,
           cancelId: 1,

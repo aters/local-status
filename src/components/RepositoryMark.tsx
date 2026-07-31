@@ -3,6 +3,7 @@ import {
   repositoryHealth,
   repositoryMarkVisual,
   type RepositoryHealth,
+  type RepositoryMarkVisual,
 } from "../repository-mark";
 import type { RepositorySummary } from "../types";
 
@@ -53,11 +54,49 @@ function RepositoryGlyph({ symbol }: { symbol: number }) {
           <circle className="is-filled" cx="9" cy="9" r="1.2" />
         </>
       );
-    default:
+    case 7:
       return (
         <>
           <ellipse cx="9" cy="9" rx="6.4" ry="3.2" transform="rotate(-32 9 9)" />
           <circle className="is-filled" cx="13.6" cy="6" r="1.15" />
+        </>
+      );
+    case 8:
+      return (
+        <>
+          <path d="m9 2.5 6 11H3l6-11Z" />
+          <circle className="is-filled" cx="9" cy="9.6" r="1.15" />
+        </>
+      );
+    case 9:
+      return <path d="M6.2 3.2H3.5v11.6h2.7M11.8 3.2h2.7v11.6h-2.7M7.4 6.2h3.2M7.4 11.8h3.2" />;
+    case 10:
+      return (
+        <>
+          <path d="M5 3.2v8.6c0 1.6 1 2.5 2.5 2.5H13M5 7h5.5c1.5 0 2.5-1 2.5-2.5V3.2" />
+          <circle className="is-filled" cx="5" cy="3.2" r="1.2" />
+          <circle className="is-filled" cx="13" cy="3.2" r="1.2" />
+          <circle className="is-filled" cx="13" cy="14.3" r="1.2" />
+        </>
+      );
+    case 11:
+      return <path d="m3.2 6 5.8-3 5.8 3L9 9 3.2 6Zm0 4L9 13l5.8-3M3.2 13.4 9 16l5.8-2.6" />;
+    case 12:
+      return (
+        <>
+          <path d="M9 2.3v3M9 12.7v3M2.3 9h3M12.7 9h3" />
+          <circle cx="9" cy="9" r="3.4" />
+        </>
+      );
+    case 13:
+      return <path d="M4.2 2.8c2 1.8 2 3.6 0 5.4s-2 3.6 0 5.4M9 2.8c2 1.8 2 3.6 0 5.4s-2 3.6 0 5.4M13.8 2.8c2 1.8 2 3.6 0 5.4s-2 3.6 0 5.4" />;
+    case 14:
+      return <path d="M2.8 13.8h3V11h3V8.2h3V5.4h3V2.6" />;
+    default:
+      return (
+        <>
+          <rect x="2.7" y="5.4" width="12.6" height="7.2" rx="3.6" />
+          <path d="M6.2 5.4v7.2M11.8 5.4v7.2" />
         </>
       );
   }
@@ -66,11 +105,12 @@ function RepositoryGlyph({ symbol }: { symbol: number }) {
 export function RepositoryMark({
   repository,
   size = "list",
+  visual = repositoryMarkVisual(repository.id),
 }: {
   repository: RepositorySummary;
   size?: "list" | "header";
+  visual?: RepositoryMarkVisual;
 }) {
-  const visual = repositoryMarkVisual(repository.id);
   const health = repositoryHealth(repository);
   const style = {
     "--repo-mark-background": visual.background,

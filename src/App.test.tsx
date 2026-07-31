@@ -352,6 +352,14 @@ function createBridge(current = true) {
           },
         ],
       })),
+      setFavourite: vi.fn(async (groupId, favourite) => ({
+        ...repositories,
+        repositories: repositories.repositories.map((repository) => ({
+          ...repository,
+          favourite:
+            repository.groupId === groupId ? favourite : repository.favourite,
+        })),
+      })),
       setArchived: vi.fn(async (repositoryId, archived) => ({
         ...repositories,
         repositories: repositories.repositories.map((repository) => ({
@@ -737,6 +745,151 @@ describe("Local Status", () => {
       "commerce-feature",
       true,
     );
+  });
+
+  it("keeps repository selection, branch switching, and actions as stable targets", async () => {
+    const user = userEvent.setup();
+    const bridge = createBridge();
+    window.localStatus = bridge;
+    render(<App />);
+
+    const cleanSelect = await screen.findByRole("button", {
+      name: "Clean working tree clean-api",
+    });
+    const changedSelect = screen.getByRole("button", {
+      name: "Uncommitted changes changed-web",
+    });
+    const changedActions = screen.getByRole("button", {
+      name: "More actions for changed-web",
+    });
+
+    expect(changedActions).toBeVisible();
+    await user.click(cleanSelect);
+    expect(cleanSelect).toHaveAttribute("aria-current", "true");
+
+    await user.click(changedActions);
+    expect(cleanSelect).toHaveAttribute("aria-current", "true");
+    expect(changedSelect).not.toHaveAttribute("aria-current");
+    await user.keyboard("{Escape}");
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Switch branch for changed-web",
+      }),
+    );
+    expect(changedSelect).toHaveAttribute("aria-current", "true");
+    expect(
+      await screen.findByRole("dialog", {
+        name: "Switch branch for changed-web",
+      }),
+    ).toBeVisible();
+  });
+
+  it("pins repositories from a keyboard-accessible action menu", async () => {
+    const user = userEvent.setup();
+    const bridge = createBridge();
+    window.localStatus = bridge;
+    render(<App />);
+
+    const trigger = await screen.findByRole("button", {
+      name: "More actions for clean-api",
+    });
+    await user.click(trigger);
+    const menu = screen.getByRole("menu", {
+      name: "Actions for clean-api",
+    });
+    const pin = within(menu).getByRole("menuitem", { name: "Pin" });
+    const rename = within(menu).getByRole("menuitem", { name: "Rename" });
+    const archive = within(menu).getByRole("menuitem", { name: "Archive" });
+
+    await waitFor(() => expect(pin).toHaveFocus());
+    await user.keyboard("{ArrowDown}");
+    expect(rename).toHaveFocus();
+    await user.keyboard("{End}");
+    expect(archive).toHaveFocus();
+    await user.keyboard("{Home}");
+    expect(pin).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(trigger).toHaveFocus();
+
+    await user.click(trigger);
+    await user.click(
+      within(
+        screen.getByRole("menu", { name: "Actions for clean-api" }),
+      ).getByRole("menuitem", { name: "Pin" }),
+    );
+
+    expect(bridge.repositories.setFavourite).toHaveBeenCalledWith(
+      "clean-api",
+      true,
+    );
+    expect(
+      await screen.findByLabelText("clean-api is pinned"),
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "More actions for clean-api" }),
+    );
+    expect(
+      screen.getByRole("menuitem", { name: "Unpin" }),
+    ).toBeVisible();
+  });
+
+  it("pins multi-worktree repositories from the group menu only", async () => {
+    const user = userEvent.setup();
+    const bridge = createBridge();
+    const groupedRepositories = {
+      ...repositories,
+      repositories: repositories.repositories.map((repository, index) => ({
+        ...repository,
+        id: index === 0 ? "commerce" : "commerce-feature",
+        groupId: "group-commerce",
+        groupName: "commerce",
+        remoteIdentity: null,
+        isPrimaryWorktree: index === 0,
+        favourite: false,
+        archived: false,
+      })),
+    };
+    bridge.repositories.list = vi.fn(async () => groupedRepositories);
+    bridge.repositories.setFavourite = vi.fn(async (_groupId, favourite) => ({
+      ...groupedRepositories,
+      repositories: groupedRepositories.repositories.map((repository) => ({
+        ...repository,
+        favourite,
+      })),
+    }));
+    window.localStatus = bridge;
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "More actions for commerce",
+      }),
+    );
+    const groupMenu = screen.getByRole("menu", {
+      name: "Actions for commerce",
+    });
+    expect(within(groupMenu).getAllByRole("menuitem")).toHaveLength(1);
+    await user.click(within(groupMenu).getByRole("menuitem", { name: "Pin" }));
+    expect(bridge.repositories.setFavourite).toHaveBeenCalledWith(
+      "group-commerce",
+      true,
+    );
+    expect(
+      await screen.findByLabelText("commerce is pinned"),
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "More actions for commerce-feature",
+      }),
+    );
+    const memberMenu = screen.getByRole("menu", {
+      name: "Actions for commerce-feature",
+    });
+    expect(
+      within(memberMenu).queryByRole("menuitem", { name: /pin/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows repository health, filters changes, and opens Quick Open", async () => {
