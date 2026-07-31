@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 import themeManifest from "../shared/themes.json" with { type: "json" };
 
-const SETTINGS_VERSION = 6;
+const SETTINGS_VERSION = 7;
 const MAX_RECENT_WORKSPACES = 8;
 const MAX_REPOSITORY_NAME_LENGTH = 80;
 const THEMES = new Set(Object.keys(themeManifest));
@@ -34,6 +34,10 @@ function defaults() {
         codex: false,
         claude: false,
       },
+      conflictDisclosureAccepted: {
+        codex: false,
+        claude: false,
+      },
     },
   };
 }
@@ -59,7 +63,7 @@ function parseSettings(value) {
   if (
     !value ||
     typeof value !== "object" ||
-    ![1, 2, 3, 4, 5, SETTINGS_VERSION].includes(value.version)
+    ![1, 2, 3, 4, 5, 6, SETTINGS_VERSION].includes(value.version)
   ) {
     return defaults();
   }
@@ -161,6 +165,10 @@ function parseSettings(value) {
           value.ai?.disclosureAccepted?.codex === true ||
           value.codex?.disclosureAccepted === true,
         claude: value.ai?.disclosureAccepted?.claude === true,
+      },
+      conflictDisclosureAccepted: {
+        codex: value.ai?.conflictDisclosureAccepted?.codex === true,
+        claude: value.ai?.conflictDisclosureAccepted?.claude === true,
       },
     },
   };
@@ -317,6 +325,9 @@ export class SettingsStore {
       models: { ...this.data.ai.models },
       executablePaths: { ...this.data.ai.executablePaths },
       disclosureAccepted: { ...this.data.ai.disclosureAccepted },
+      conflictDisclosureAccepted: {
+        ...this.data.ai.conflictDisclosureAccepted,
+      },
     };
   }
 
@@ -335,6 +346,12 @@ export class SettingsStore {
 
   async acceptAiDisclosure(provider) {
     this.data.ai.disclosureAccepted[provider] = true;
+    await this.save();
+    return this.aiSettings();
+  }
+
+  async acceptAiConflictDisclosure(provider) {
+    this.data.ai.conflictDisclosureAccepted[provider] = true;
     await this.save();
     return this.aiSettings();
   }

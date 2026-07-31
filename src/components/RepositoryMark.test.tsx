@@ -10,6 +10,7 @@ const repository: RepositorySummary = {
   groupName: "changed-web",
   remoteIdentity: "https://example.test/changed-web",
   isPrimaryWorktree: true,
+  isWorkspaceRoot: false,
   favourite: false,
   archived: false,
   branch: "main",

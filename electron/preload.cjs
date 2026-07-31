@@ -47,7 +47,8 @@ contextBridge.exposeInMainWorld("localStatus", {
       invoke("repositories:pop-stash", { repositoryId, stashId }),
     dropStash: (repositoryId, stashId) =>
       invoke("repositories:drop-stash", { repositoryId, stashId }),
-    sync: (repositoryId) => invoke("repositories:sync", { repositoryId }),
+    sync: (repositoryId, strategy) =>
+      invoke("repositories:sync", { repositoryId, strategy }),
     scripts: (repositoryId) => invoke("repositories:scripts", { repositoryId }),
     setFavourite: (groupId, favourite) =>
       invoke("repositories:set-favourite", { groupId, favourite }),
@@ -111,6 +112,8 @@ contextBridge.exposeInMainWorld("localStatus", {
       invoke("ai:accept-disclosure", { provider }),
     generateCommitMessage: (input) =>
       invoke("ai:generate-commit-message", input),
+    startConflictResolution: (input) =>
+      invoke("ai:start-conflict-resolution", input),
     cancelGeneration: (requestId) =>
       invoke("ai:cancel-generation", { requestId }),
   },

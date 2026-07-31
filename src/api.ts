@@ -63,7 +63,13 @@ export const api = {
     bridge().repositories.popStash(repositoryId, stashId),
   dropStash: (repositoryId: string, stashId: string) =>
     bridge().repositories.dropStash(repositoryId, stashId),
-  sync: (repositoryId: string) => bridge().repositories.sync(repositoryId),
+  sync: (
+    repositoryId: string,
+    strategy?: Parameters<LocalStatusBridge["repositories"]["sync"]>[1],
+  ) =>
+    strategy
+      ? bridge().repositories.sync(repositoryId, strategy)
+      : bridge().repositories.sync(repositoryId),
   scripts: (repositoryId: string) => bridge().repositories.scripts(repositoryId),
   setFavourite: (groupId: string, favourite: boolean) =>
     bridge().repositories.setFavourite(groupId, favourite),
@@ -124,6 +130,9 @@ export const api = {
   generateCommitMessage: (
     input: Parameters<LocalStatusBridge["ai"]["generateCommitMessage"]>[0],
   ) => bridge().ai.generateCommitMessage(input),
+  startAiConflictResolution: (
+    input: Parameters<LocalStatusBridge["ai"]["startConflictResolution"]>[0],
+  ) => bridge().ai.startConflictResolution(input),
   cancelCommitMessageGeneration: (requestId: string) =>
     bridge().ai.cancelGeneration(requestId),
   profiles: () => bridge().profiles.list(),

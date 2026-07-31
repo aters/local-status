@@ -34,6 +34,7 @@ import {
   repositoryBranches,
   repositoryCommits,
   repositoryFiles,
+  repositoryStatus,
   repositoryStashes,
   stashDetails,
   workspaceFiles,
@@ -54,6 +55,7 @@ import {
 } from "./github-service.mjs";
 import { SettingsStore } from "./settings-store.mjs";
 import { TerminalManager } from "./terminal-manager.mjs";
+import { ensureNodePtySpawnHelper } from "./node-pty-helper.mjs";
 import { WorkspaceManager } from "./workspace-manager.mjs";
 import themeManifest from "../shared/themes.json" with { type: "json" };
 
@@ -269,6 +271,7 @@ async function repositoriesWithPreferences() {
       ...repository,
       displayName:
         settingsStore.repositoryNameFor(getWorkspaceRoot(), repository.id) ??
+        repository.displayName ??
         repository.id,
       favourite: favourites.has(repository.groupId),
     })),
@@ -565,8 +568,8 @@ function registerIpc() {
   handle("workspace:choose", async () => {
     if (!(await confirmStopForWorkspaceChange())) return null;
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: "Choose a multi-repository workspace",
-      buttonLabel: "Use workspace",
+      title: "Choose a Git repository or workspace",
+      buttonLabel: "Open",
       properties: ["openDirectory"],
     });
     if (result.canceled || !result.filePaths[0]) return null;
@@ -804,12 +807,17 @@ function registerIpc() {
     return dropStash(repositoryId, stashId);
   });
   handle("repositories:sync", async (payload) => {
-    const repositoryId = requireString(
-      requireObject(payload).repositoryId,
-      "repository",
-    );
+    const request = requireObject(payload);
+    const repositoryId = requireString(request.repositoryId, "repository");
+    const strategy =
+      request.strategy === undefined || request.strategy === null
+        ? null
+        : requireString(request.strategy, "sync strategy", 20);
+    if (strategy !== null && !["rebase", "merge"].includes(strategy)) {
+      throw new Error("Choose rebase or merge to continue.");
+    }
     await requireActiveRepository(repositoryId);
-    return syncRepository(repositoryId);
+    return syncRepository(repositoryId, strategy);
   });
   handle("repositories:scripts", async (payload) => {
     const repositoryId = requireString(
@@ -955,6 +963,59 @@ function registerIpc() {
       request.snapshotId,
     );
     return aiRunner.generate(request.requestId, context);
+  });
+  handle("ai:start-conflict-resolution", async (payload) => {
+    const request = requireObject(payload, "AI conflict resolution");
+    const repositoryId = requireString(request.repositoryId, "repository");
+    const provider = requireString(request.provider, "AI provider", 20);
+    if (!["codex", "claude"].includes(provider)) {
+      throw new Error("Invalid AI provider.");
+    }
+    await requireActiveRepository(repositoryId);
+    const repository = await getRepository(repositoryId);
+    const [status, changes] = await Promise.all([
+      repositoryStatus(repository),
+      repositoryChanges(repositoryId),
+    ]);
+    if (!status.operation) {
+      throw new Error("No merge or rebase is currently paused.");
+    }
+    if (!changes.changes.some((change) => change.scope === "conflict")) {
+      throw new Error("There are no unresolved files for AI to resolve.");
+    }
+
+    const settings = settingsStore.aiSettings();
+    if (!settings.conflictDisclosureAccepted[provider]) {
+      let accepted =
+        process.env.LOCAL_STATUS_TEST_ACCEPT_AI_CONFLICT_DISCLOSURE === "1";
+      if (!accepted) {
+        const label = provider === "codex" ? "Codex" : "Claude";
+        const result = await dialog.showMessageBox(mainWindow, {
+          type: "warning",
+          title: `Let ${label} resolve repository conflicts?`,
+          message: `${label} will be able to inspect and edit this repository.`,
+          detail:
+            `An interactive ${label} CLI session will receive a focused conflict-resolution prompt. It may read files, edit conflicted files, run commands with normal approval prompts, and stage resolutions. Local Status instructs it not to continue or abort the Git operation, commit, push, or discard unrelated work.`,
+          buttons: ["Open interactive agent", "Cancel"],
+          defaultId: 1,
+          cancelId: 1,
+          noLink: true,
+        });
+        accepted = result.response === 0;
+      }
+      if (!accepted) return null;
+      await settingsStore.acceptAiConflictDisclosure(provider);
+    }
+
+    const spec = await aiRunner.conflictResolutionSpec(
+      provider,
+      repository.path,
+      status.operation,
+    );
+    return terminalManager.create({
+      repositoryId,
+      ...spec,
+    });
   });
   handle("ai:cancel-generation", (payload) =>
     aiRunner.cancel(
@@ -1111,8 +1172,17 @@ async function startApplication() {
   if (process.env.LOCAL_STATUS_TEST_WORKSPACE) {
     await workspaceManager.open(process.env.LOCAL_STATUS_TEST_WORKSPACE);
   }
+  let terminalRuntimeError = null;
+  try {
+    ensureNodePtySpawnHelper();
+  } catch (error) {
+    terminalRuntimeError = error;
+  }
   terminalManager = new TerminalManager({
-    spawnPty: pty.spawn,
+    spawnPty: (...args) => {
+      if (terminalRuntimeError) throw terminalRuntimeError;
+      return pty.spawn(...args);
+    },
     emit: (event) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("terminals:event", event);

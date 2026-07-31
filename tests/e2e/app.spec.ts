@@ -15,16 +15,20 @@ let userData: string;
 let codexExecutable: string;
 let githubExecutable: string;
 let changedRepository: string;
+let producerRepository: string;
 let desktopProcess: ChildProcess | null = null;
 
-async function expectNoSeriousAccessibilityViolations(page: Page) {
+async function expectNoSeriousAccessibilityViolations(
+  page: Page,
+  selector?: string,
+) {
   await page.evaluate(axe.source);
-  const results = await page.evaluate(async (tags) => {
+  const results = await page.evaluate(async ({ tags, selector }) => {
     const axeApi = (
       window as typeof window & {
         axe: {
           run(
-            context: Document,
+            context: Document | Element,
             options: {
               runOnly: { type: "tag"; values: string[] };
             },
@@ -42,10 +46,15 @@ async function expectNoSeriousAccessibilityViolations(page: Page) {
         };
       }
     ).axe;
-    return axeApi.run(document, {
+    const context = selector ? document.querySelector(selector) : document;
+    if (!context) throw new Error(`Accessibility context not found: ${selector}`);
+    return axeApi.run(context, {
       runOnly: { type: "tag", values: tags },
     });
-  }, ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
+  }, {
+    tags: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"],
+    selector,
+  });
   expect(
     results.violations
       .filter(({ impact }) => impact === "serious" || impact === "critical")
@@ -258,18 +267,18 @@ if (args[0] === "--version") {
     writeFileSync(join(repository, "README.md"), readme);
   }
   const remote = join(fixtureParent, "changed-remote.git");
-  const producer = join(fixtureParent, "changed-producer");
+  producerRepository = join(fixtureParent, "changed-producer");
   execFileSync("git", ["init", "--bare", remote], { stdio: "ignore" });
   git(changedRepository, "remote", "add", "origin", remote);
   git(changedRepository, "push", "-u", "origin", "main");
   git(remote, "symbolic-ref", "HEAD", "refs/heads/main");
-  execFileSync("git", ["clone", remote, producer], { stdio: "ignore" });
-  git(producer, "config", "user.email", "e2e@local-status.test");
-  git(producer, "config", "user.name", "Local Status E2E");
-  writeFileSync(join(producer, "remote-update.md"), "# Remote update\n");
-  git(producer, "add", "remote-update.md");
-  git(producer, "commit", "-m", "Remote fixture update");
-  git(producer, "push", "origin", "main");
+  execFileSync("git", ["clone", remote, producerRepository], { stdio: "ignore" });
+  git(producerRepository, "config", "user.email", "e2e@local-status.test");
+  git(producerRepository, "config", "user.name", "Local Status E2E");
+  writeFileSync(join(producerRepository, "remote-update.md"), "# Remote update\n");
+  git(producerRepository, "add", "remote-update.md");
+  git(producerRepository, "commit", "-m", "Remote fixture update");
+  git(producerRepository, "push", "origin", "main");
   git(changedRepository, "fetch", "origin");
   writeFileSync(
     join(changedRepository, "README.md"),
@@ -559,7 +568,7 @@ test("renders and persists the Glass and Neumorphic theme systems", async ({
 
   await window.locator(".workspace-switcher").click();
   await expect(
-    window.getByRole("menu", { name: "Switch workspace" }),
+    window.getByRole("menu", { name: "Switch repository or workspace" }),
   ).toBeVisible();
   await window.screenshot({
     path: testInfo.outputPath("glass-workspace-menu.png"),
@@ -925,10 +934,10 @@ test("renders adaptive Liquid Glass across workflows and accessibility states", 
 
   await window.locator(".workspace-switcher").click();
   await expect(
-    window.getByRole("menu", { name: "Switch workspace" }),
+    window.getByRole("menu", { name: "Switch repository or workspace" }),
   ).toBeVisible();
   const lightWorkspaceMenuOpacity = await window
-    .getByRole("menu", { name: "Switch workspace" })
+    .getByRole("menu", { name: "Switch repository or workspace" })
     .evaluate((element) => {
       const channels = getComputedStyle(element).backgroundColor.match(
         /[\d.]+/g,
@@ -938,7 +947,9 @@ test("renders adaptive Liquid Glass across workflows and accessibility states", 
   expect(lightWorkspaceMenuOpacity).toBe(1);
   const [liquidHeaderBounds, liquidWorkspaceMenuBounds] = await Promise.all([
     window.locator(".app-header").boundingBox(),
-    window.getByRole("menu", { name: "Switch workspace" }).boundingBox(),
+    window
+      .getByRole("menu", { name: "Switch repository or workspace" })
+      .boundingBox(),
   ]);
   expect(liquidHeaderBounds).not.toBeNull();
   expect(liquidWorkspaceMenuBounds).not.toBeNull();
@@ -946,7 +957,7 @@ test("renders adaptive Liquid Glass across workflows and accessibility states", 
     liquidHeaderBounds!.y + liquidHeaderBounds!.height,
   );
   await expect(
-    window.getByRole("menu", { name: "Switch workspace" }),
+    window.getByRole("menu", { name: "Switch repository or workspace" }),
   ).toHaveCSS("position", "absolute");
   await window.screenshot({
     path: testInfo.outputPath("liquid-glass-light-workspace-menu.png"),
@@ -1025,7 +1036,7 @@ test("renders adaptive Liquid Glass across workflows and accessibility states", 
   expect(await root.evaluate((element) => element.style.colorScheme)).toBe("dark");
   await window.locator(".workspace-switcher").click();
   const darkWorkspaceMenu = window.getByRole("menu", {
-    name: "Switch workspace",
+    name: "Switch repository or workspace",
   });
   await expect(darkWorkspaceMenu).toBeVisible();
   const darkWorkspaceMenuOpacity = await darkWorkspaceMenu.evaluate(
@@ -1181,6 +1192,131 @@ test("renders adaptive Liquid Glass across workflows and accessibility states", 
     path: testInfo.outputPath("liquid-glass-accessibility-fallback.png"),
     animations: "disabled",
   });
+  await browser.close();
+});
+
+test("recovers a divergent sync with an explicit rebase strategy", async () => {
+  git(changedRepository, "add", "README.md", "package.json");
+  git(changedRepository, "commit", "-m", "Local fixture change");
+
+  const browser = await launchDesktop(9346);
+  const window = browser.contexts()[0].pages()[0];
+  await window.setViewportSize({ width: 1440, height: 900 });
+
+  await expect(window.getByText("changed-web").first()).toBeVisible();
+  await window.getByText("changed-web").first().click();
+  await window
+    .getByRole("button", { name: "Sync changes: 1 incoming, 1 outgoing" })
+    .click();
+
+  const dialog = window.getByRole("dialog", {
+    name: "Local and remote histories diverged",
+  });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText("1 incoming")).toBeVisible();
+  await expect(dialog.getByText("1 outgoing")).toBeVisible();
+  await expect(dialog.getByRole("radio", { name: /^Rebase/ })).toBeChecked();
+  await expect(
+    dialog.getByText("Linear history · local commit IDs change"),
+  ).toBeVisible();
+  await expectNoSeriousAccessibilityViolations(window, ".sync-recovery-modal");
+
+  const mergeStrategy = dialog.getByRole("radio", { name: /^Merge/ });
+  await mergeStrategy.focus();
+  await mergeStrategy.press("Space");
+  await expect(
+    dialog.getByRole("button", { name: "Merge and sync" }),
+  ).toBeVisible();
+  const rebaseStrategy = dialog.getByRole("radio", { name: /^Rebase/ });
+  await rebaseStrategy.focus();
+  await rebaseStrategy.press("Space");
+  await dialog.getByRole("button", { name: "Rebase and sync" }).click();
+
+  await expect(dialog).toBeHidden();
+  await expect(
+    window.getByRole("button", { name: "Sync changes: 0 incoming, 0 outgoing" }),
+  ).toBeVisible();
+  await expect(
+    window.getByText("Synced changed-web: pulled 1, pushed 1."),
+  ).toBeVisible();
+  expect(git(changedRepository, "log", "-1", "--format=%s")).toBe(
+    "Local fixture change",
+  );
+
+  await browser.close();
+});
+
+test("keeps a conflicted rebase recoverable after viewing its files", async () => {
+  writeFileSync(
+    join(producerRepository, "README.md"),
+    "# changed-web\n\nRemote edit\n",
+  );
+  git(producerRepository, "add", "README.md");
+  git(producerRepository, "commit", "-m", "Remote README change");
+  git(producerRepository, "push", "origin", "main");
+
+  git(changedRepository, "add", "README.md", "package.json");
+  git(changedRepository, "commit", "-m", "Local README change");
+  git(changedRepository, "fetch", "origin");
+
+  const browser = await launchDesktop(9347);
+  const window = browser.contexts()[0].pages()[0];
+  await window.setViewportSize({ width: 1440, height: 900 });
+
+  await expect(window.getByText("changed-web").first()).toBeVisible();
+  await window.getByText("changed-web").first().click();
+  await window
+    .getByRole("button", { name: "Sync changes: 2 incoming, 1 outgoing" })
+    .click();
+  const divergenceDialog = window.getByRole("dialog", {
+    name: "Local and remote histories diverged",
+  });
+  await divergenceDialog
+    .getByRole("button", { name: "Rebase and sync" })
+    .click();
+
+  const recoveryDialog = window.getByRole("dialog", {
+    name: "Resolve conflicts to continue",
+  });
+  await expect(recoveryDialog).toBeVisible();
+  await recoveryDialog
+    .getByRole("button", { name: "View conflicts" })
+    .click();
+
+  const recoveryBanner = window.getByRole("region", {
+    name: "Rebase recovery",
+  });
+  await expect(recoveryBanner).toBeVisible();
+  await expect(
+    recoveryBanner.getByText("1 conflicted file needs resolution"),
+  ).toBeVisible();
+  await expect(
+    window.getByRole("button", { name: "Mark resolved README.md" }),
+  ).toBeVisible();
+  await expect(
+    window.getByRole("button", {
+      name: "Resume rebase recovery: 1 conflicts",
+    }),
+  ).toBeVisible();
+  await expectNoSeriousAccessibilityViolations(window, ".paused-sync-banner");
+
+  await recoveryBanner
+    .getByRole("button", { name: "Recovery details" })
+    .click();
+  await expect(
+    window.getByRole("dialog", {
+      name: "Resolve conflicts to continue",
+    }),
+  ).toBeVisible();
+  await window
+    .getByRole("dialog", { name: "Resolve conflicts to continue" })
+    .getByRole("button", { name: "Open terminal" })
+    .click();
+  await expect(window.getByText("changed-web · Sync recovery").first()).toBeVisible();
+  await expect(
+    window.getByText(/Local Status could not (?:start|launch)/),
+  ).toHaveCount(0);
+
   await browser.close();
 });
 

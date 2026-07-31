@@ -27,6 +27,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Sparkles,
   Star,
   SquareTerminal,
   Play,
@@ -69,6 +70,8 @@ import type {
   RepositorySummary,
   RepositoryTab,
   RepositoryScript,
+  SyncResult,
+  SyncStrategy,
   StashDetails,
   StashSummary,
   TerminalKind,
@@ -82,6 +85,7 @@ import { CommitModal } from "./CommitModal";
 import { FileTree } from "./FileTree";
 import { RepositoryMark } from "./RepositoryMark";
 import { StashModal } from "./StashModal";
+import { SyncRecoveryModal } from "./SyncRecoveryModal";
 import { repositoryHealth } from "../repository-mark";
 
 const MonacoDiff = lazy(() => import("./MonacoDiff"));
@@ -303,7 +307,7 @@ function StatusBadge({
   children,
   title,
 }: {
-  tone: "neutral" | "dirty" | "incoming" | "outgoing" | "danger";
+  tone: "neutral" | "dirty" | "incoming" | "outgoing" | "danger" | "paused";
   children: React.ReactNode;
   title?: string;
 }) {
@@ -314,8 +318,90 @@ function StatusBadge({
   );
 }
 
+function PausedSyncBanner({
+  repository,
+  providerLabel,
+  aiReady,
+  busy,
+  onShowRecovery,
+  onOpenTerminal,
+  onStartAi,
+}: {
+  repository: RepositorySummary;
+  providerLabel: string;
+  aiReady: boolean;
+  busy: boolean;
+  onShowRecovery: () => void;
+  onOpenTerminal: () => void;
+  onStartAi: () => void;
+}) {
+  const operation = repository.operation;
+  if (!operation) return null;
+  const operationLabel = operation === "rebase" ? "Rebase" : "Merge";
+  const conflicts = repository.summary.conflicts;
+
+  return (
+    <section
+      className="paused-sync-banner"
+      aria-label={`${operationLabel} recovery`}
+    >
+      <div className="paused-sync-banner__status">
+        <span>
+          <GitCompareArrows size={15} />
+        </span>
+        <div>
+          <strong>{operationLabel} paused</strong>
+          <small>
+            {conflicts
+              ? `${conflicts} conflicted ${
+                  conflicts === 1 ? "file needs" : "files need"
+                } resolution`
+              : "All conflicts are staged and Git is ready to continue"}
+          </small>
+        </div>
+      </div>
+      <p>
+        {conflicts
+          ? "Edit the conflicted files first, then mark each one resolved."
+          : `Continue or abort the ${operation} from a repository terminal.`}
+      </p>
+      <div className="paused-sync-banner__actions">
+        <button
+          className="secondary-button"
+          type="button"
+          disabled={busy}
+          onClick={onShowRecovery}
+        >
+          Recovery details
+        </button>
+        {conflicts > 0 && (
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={busy}
+            onClick={onStartAi}
+          >
+            <Sparkles size={13} />
+            {aiReady ? `Resolve with ${providerLabel}` : "AI assistance"}
+          </button>
+        )}
+        <button
+          className="primary-button"
+          type="button"
+          disabled={busy}
+          onClick={onOpenTerminal}
+        >
+          <SquareTerminal size={13} />
+          {conflicts ? "Open terminal" : "Continue in terminal"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function RepositoryNavigator({
   repositories,
+  rootKind,
   loading,
   selectedId,
   onSelect,
@@ -328,6 +414,7 @@ function RepositoryNavigator({
   onOpenBranches,
 }: {
   repositories: RepositorySummary[];
+  rootKind: RepositoriesResponse["rootKind"];
   loading: boolean;
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -390,6 +477,9 @@ function RepositoryNavigator({
           return {
             id,
             name: repositoryGroupName(members[0]),
+            isWorkspaceRoot: members.some(
+              (member) => member.isWorkspaceRoot,
+            ),
             favourite: members.some((member) => member.favourite),
             archived: members.every((member) => member.archived),
             members: sortedMembers,
@@ -405,6 +495,7 @@ function RepositoryNavigator({
               (total, member) => total + member.outgoing,
               0,
             ),
+            paused: members.filter((member) => member.operation).length,
           };
         })
         .filter(
@@ -422,6 +513,7 @@ function RepositoryNavigator({
         )
         .sort(
           (left, right) =>
+            Number(right.isWorkspaceRoot) - Number(left.isWorkspaceRoot) ||
             Number(right.favourite) - Number(left.favourite) ||
             left.name.localeCompare(right.name),
         );
@@ -643,27 +735,55 @@ function RepositoryNavigator({
           >
             <RepositoryMark repository={repository} />
             <span className="repository-row__content">
-              <span className="repository-row__name">{displayName}</span>
+              <span className="repository-row__title">
+                <span className="repository-row__name">{displayName}</span>
+                {repository.isWorkspaceRoot && (
+                  <span
+                    className="repository-root-badge"
+                    title="Selected folder"
+                  >
+                    Root
+                  </span>
+                )}
+              </span>
             </span>
           </button>
         )}
         <button
           className="repository-row__branch"
           type="button"
-          aria-label={`Switch branch for ${displayName}`}
-          data-tooltip="Switch branch"
-          disabled={repository.archived}
+          aria-label={
+            repository.operation
+              ? `${repository.operation === "rebase" ? "Rebase" : "Merge"} paused for ${displayName}`
+              : `Switch branch for ${displayName}`
+          }
+          data-tooltip={
+            repository.operation
+              ? "Finish or abort the paused operation before switching branches"
+              : "Switch branch"
+          }
+          disabled={repository.archived || Boolean(repository.operation)}
           onClick={(event) => onOpenBranches(repository.id, event.currentTarget)}
         >
           <GitBranch size={11} />
           <span>
-            {repository.detached
+            {repository.operation
+              ? `${repository.operation === "rebase" ? "Rebase" : "Merge"} paused`
+              : repository.detached
               ? "Detached HEAD"
               : repository.branch ||
                 (repository.unborn ? "No commits yet" : "Unknown")}
           </span>
         </button>
         <span className="repository-row__signals">
+          {repository.operation && (
+            <StatusBadge
+              tone="paused"
+              title={`${repository.operation === "rebase" ? "Rebase" : "Merge"} paused`}
+            >
+              <GitCompareArrows size={10} />
+            </StatusBadge>
+          )}
           {repository.summary.files > 0 && (
             <StatusBadge tone="dirty">{repository.summary.files}</StatusBadge>
           )}
@@ -728,11 +848,32 @@ function RepositoryNavigator({
               size={14}
             />
             <span>
-              <strong>{group.name}</strong>
+              <span className="repository-group__title">
+                <strong>{group.name}</strong>
+                {group.isWorkspaceRoot && (
+                  <span
+                    className="repository-root-badge"
+                    title="Selected folder"
+                  >
+                    Root
+                  </span>
+                )}
+              </span>
               <small>{group.members.length} checkouts</small>
             </span>
           </button>
           <span className="repository-row__signals">
+            {group.paused > 0 && (
+              <StatusBadge
+                tone="paused"
+                title={`${group.paused} paused Git ${
+                  group.paused === 1 ? "operation" : "operations"
+                }`}
+              >
+                <GitCompareArrows size={10} />
+                {group.paused}
+              </StatusBadge>
+            )}
             {group.files > 0 && (
               <StatusBadge tone="dirty">{group.files}</StatusBadge>
             )}
@@ -774,7 +915,9 @@ function RepositoryNavigator({
       <aside className={`repo-panel ${mobileOpen ? "is-mobile-open" : ""}`}>
       <div className="panel-titlebar">
         <div>
-          <span className="panel-kicker">Workspace</span>
+          <span className="panel-kicker">
+            {rootKind === "hybrid" ? "Repository workspace" : "Workspace"}
+          </span>
           <strong>Repositories</strong>
         </div>
         <button
@@ -826,7 +969,11 @@ function RepositoryNavigator({
           <div className="panel-empty panel-empty--repositories">
             <Search size={22} />
             <strong>No repositories found</strong>
-            <span>Try another name or filter.</span>
+            <span>
+              {repositories.length === 0
+                ? "Choose a Git repository or a folder containing repositories."
+                : "Try another name or filter."}
+            </span>
           </div>
         ) : null}
         {showsArchivedGroups && (
@@ -1016,7 +1163,13 @@ function ChangeList({
   ) {
     const key = changeActionKey(action, selection);
     const verb =
-      action === "stage" ? "Stage" : action === "unstage" ? "Unstage" : "Revert";
+      action === "stage" && selection.scope === "conflict"
+        ? "Mark resolved"
+        : action === "stage"
+          ? "Stage"
+          : action === "unstage"
+            ? "Unstage"
+            : "Revert";
     const label = selection.paths?.length
       ? `${verb} ${selection.paths.length} selected files`
       : selection.path
@@ -1481,6 +1634,7 @@ export function RepositoryWorkspace({
   onRefresh,
   onStartTerminal,
   onStartAiTerminal,
+  onOpenRecoveryTerminal,
   theme,
   colorScheme,
   findRequest,
@@ -1501,6 +1655,10 @@ export function RepositoryWorkspace({
     action: AiTerminalAction,
     executablePath: string | null,
   ) => Promise<TerminalSession>;
+  onOpenRecoveryTerminal: (
+    repositoryId: string,
+    command: string,
+  ) => Promise<void>;
   theme: Theme;
   colorScheme: ResolvedColorScheme;
   findRequest: number;
@@ -1595,6 +1753,14 @@ export function RepositoryWorkspace({
   const [stashBusy, setStashBusy] = useState<string | null>(null);
   const [fetching, setFetching] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
+  const [syncRecovery, setSyncRecovery] = useState<
+    Extract<SyncResult, { outcome: "diverged" | "paused" }> | null
+  >(null);
+  const [syncRecoveryAfterStash, setSyncRecoveryAfterStash] = useState<
+    Extract<SyncResult, { outcome: "diverged" }> | null
+  >(null);
+  const [syncStrategy, setSyncStrategy] = useState<SyncStrategy>("rebase");
+  const [syncRecoveryError, setSyncRecoveryError] = useState<string | null>(null);
   const [changeBusy, setChangeBusy] = useState<string | null>(null);
   const [viewerExpanded, setViewerExpanded] = useState(false);
   const [branchMenu, setBranchMenu] = useState<{
@@ -1643,6 +1809,25 @@ export function RepositoryWorkspace({
 
   const selectedRepository =
     activeRepositories.find((repository) => repository.id === selectedId) ?? null;
+
+  function pausedResultFor(
+    repository: RepositorySummary,
+    repositoryChanges = changes,
+  ): Extract<SyncResult, { outcome: "paused" }> | null {
+    if (!repository.operation) return null;
+    return {
+      outcome: "paused",
+      repositoryId: repository.id,
+      operation: repository.operation,
+      branch: repository.branch,
+      upstream: repository.upstream,
+      conflictFiles: repositoryChanges
+        .filter((change) => change.scope === "conflict")
+        .map((change) => change.path),
+      incoming: repository.incoming,
+      outgoing: repository.outgoing,
+    };
+  }
 
   function showToast(
     message: string,
@@ -1740,6 +1925,22 @@ export function RepositoryWorkspace({
     setRunMenuOpen(false);
     setTerminalError(null);
   }, [selectedId]);
+
+  useEffect(() => {
+    if (!selectedRepository?.operation || aiStatus) return;
+    let cancelled = false;
+    void api
+      .aiStatus()
+      .then((status) => {
+        if (!cancelled) setAiStatus(status);
+      })
+      .catch(() => {
+        // Recovery remains available through the terminal if provider detection fails.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [aiStatus, selectedRepository?.id, selectedRepository?.operation]);
 
   useEffect(() => {
     if (!runMenuOpen) return;
@@ -2324,6 +2525,7 @@ export function RepositoryWorkspace({
 
   async function createSelectedStash() {
     if (!selectedId || stashModalPath === undefined) return;
+    const recoveryAfterStash = syncRecoveryAfterStash;
     setStashBusy("create");
     setStashError(null);
     try {
@@ -2349,16 +2551,18 @@ export function RepositoryWorkspace({
             }.`,
         {
           durationMs: 8_000,
-          action: {
-            label: "View stash",
-            run: () => {
-              setTab("stashes");
-              setSelectedCommit(null);
-              setSelectedStash(result.stash.id);
-              setCompareRequest(null);
-              setToast(null);
-            },
-          },
+          action: recoveryAfterStash
+            ? undefined
+            : {
+                label: "View stash",
+                run: () => {
+                  setTab("stashes");
+                  setSelectedCommit(null);
+                  setSelectedStash(result.stash.id);
+                  setCompareRequest(null);
+                  setToast(null);
+                },
+              },
         },
       );
       if (
@@ -2368,10 +2572,26 @@ export function RepositoryWorkspace({
         setCompareRequest(null);
       }
       await onRefresh();
+      if (recoveryAfterStash) {
+        setSyncRecovery({
+          ...recoveryAfterStash,
+          workingTreeDirty: result.remainingFiles > 0,
+        });
+        setSyncRecoveryAfterStash(null);
+      }
     } catch (caught) {
       setStashError(readableError(caught, "Could not create the stash."));
     } finally {
       setStashBusy(null);
+    }
+  }
+
+  function closeStashModal() {
+    if (stashBusy === "create") return;
+    setStashModalPath(undefined);
+    if (syncRecoveryAfterStash) {
+      setSyncRecovery(syncRecoveryAfterStash);
+      setSyncRecoveryAfterStash(null);
     }
   }
 
@@ -2448,22 +2668,54 @@ export function RepositoryWorkspace({
     }
   }
 
-  async function syncSelectedRepository(repositoryId: string) {
-    setSyncing(repositoryId);
-    setToast(null);
-    try {
-      const result = await api.sync(repositoryId);
+  async function presentSyncResult(result: SyncResult) {
+    if (result.outcome === "synced") {
+      setSyncRecovery(null);
+      setSyncRecoveryAfterStash(null);
+      setSyncRecoveryError(null);
       const activity = [
         result.pulled ? `pulled ${result.pulled}` : null,
         result.pushed ? `pushed ${result.pushed}` : null,
       ].filter(Boolean);
       showToast(
         activity.length
-          ? `Synced ${repositoryId}: ${activity.join(", ")}.`
-          : `${repositoryId} is already synchronized.`,
+          ? `Synced ${result.repositoryId}: ${activity.join(", ")}.`
+          : `${result.repositoryId} is already synchronized.`,
+      );
+      return;
+    }
+
+    setSyncRecovery(result);
+    setSyncRecoveryError(null);
+    if (result.outcome === "diverged") setSyncStrategy("rebase");
+    if (result.outcome === "paused" && !aiStatus) {
+      try {
+        setAiStatus(await api.aiStatus());
+      } catch {
+        setAiStatus(null);
+      }
+    }
+  }
+
+  async function syncSelectedRepository(
+    repositoryId: string,
+    strategy?: SyncStrategy,
+  ) {
+    setSyncing(repositoryId);
+    if (!strategy) setToast(null);
+    setSyncRecoveryError(null);
+    try {
+      await presentSyncResult(
+        strategy
+          ? await api.sync(repositoryId, strategy)
+          : await api.sync(repositoryId),
       );
     } catch (caught) {
       const message = readableSyncError(caught);
+      if (strategy || syncRecovery) {
+        setSyncRecoveryError(message);
+        return;
+      }
       showToast(message, {
         tone: "error",
         durationMs: 10_000,
@@ -2537,12 +2789,14 @@ export function RepositoryWorkspace({
   async function locateAiExecutable() {
     if (!aiStatus) return;
     setCommitError(null);
+    setSyncRecoveryError(null);
     try {
       setAiStatus(await api.chooseAiExecutable(aiStatus.provider));
     } catch (caught) {
-      setCommitError(
-        caught instanceof Error ? caught.message : "The AI CLI could not be selected.",
-      );
+      const message =
+        caught instanceof Error ? caught.message : "The AI CLI could not be selected.";
+      setCommitError(message);
+      setSyncRecoveryError(message);
     }
   }
 
@@ -2550,6 +2804,7 @@ export function RepositoryWorkspace({
     if (!selectedId || !aiStatus) return;
     const provider = aiStatus.provider;
     setCommitError(null);
+    setSyncRecoveryError(null);
     try {
       const session = await onStartAiTerminal(
         selectedId,
@@ -2559,36 +2814,169 @@ export function RepositoryWorkspace({
       );
       setAiTerminal({ session, provider, action });
     } catch (caught) {
-      setCommitError(
+      const message =
         caught instanceof Error
           ? caught.message
-          : `Could not open the ${provider === "codex" ? "Codex" : "Claude"} setup terminal.`,
-      );
+          : `Could not open the ${provider === "codex" ? "Codex" : "Claude"} setup terminal.`;
+      setCommitError(message);
+      setSyncRecoveryError(message);
     }
   }
 
   async function closeAiTerminal() {
+    const action = aiTerminal?.action;
     setAiTerminal(null);
     try {
       setAiStatus(await api.aiStatus());
     } catch {
       // The commit flow remains usable even if provider detection fails.
     }
+    if (
+      action === "resolve-conflicts" &&
+      selectedId &&
+      syncRecovery?.outcome === "paused"
+    ) {
+      try {
+        const result = await api.changes(selectedId);
+        setChanges(result.changes);
+        setSyncRecovery((current) =>
+          current?.outcome === "paused"
+            ? {
+                ...current,
+                conflictFiles: result.changes
+                  .filter((change) => change.scope === "conflict")
+                  .map((change) => change.path),
+              }
+            : current,
+        );
+        await onRefresh();
+      } catch (caught) {
+        setSyncRecoveryError(
+          readableError(caught, "Could not refresh the conflicted files."),
+        );
+      }
+    }
   }
 
   async function changeAiPreferences(provider: AiProvider, model?: string) {
     if (!aiStatus) return;
     setCommitError(null);
+    setSyncRecoveryError(null);
     const nextModel =
       model ??
       aiStatus.selectedModels[provider];
     try {
       setAiStatus(await api.setAiPreferences(provider, nextModel));
     } catch (caught) {
-      setCommitError(
+      const message =
         caught instanceof Error
           ? caught.message
-          : "The AI preference could not be saved.",
+          : "The AI preference could not be saved.";
+      setCommitError(message);
+      setSyncRecoveryError(message);
+    }
+  }
+
+  async function openPausedRecovery(repository: RepositorySummary) {
+    if (!repository.operation) return;
+    setSyncing(repository.id);
+    setSyncRecoveryError(null);
+    try {
+      const result = await api.changes(repository.id);
+      if (selectedId === repository.id) setChanges(result.changes);
+      const paused = pausedResultFor(repository, result.changes);
+      if (paused) await presentSyncResult(paused);
+    } catch (caught) {
+      showToast(
+        readableError(caught, "Could not load the paused Git operation."),
+        { tone: "error", durationMs: 8_000 },
+      );
+    } finally {
+      setSyncing(null);
+    }
+  }
+
+  async function startAiConflictResolution(
+    recovery: Extract<SyncResult, { outcome: "paused" }> | null =
+      syncRecovery?.outcome === "paused" ? syncRecovery : null,
+  ) {
+    if (!selectedId || !recovery) return;
+    setSyncRecovery(recovery);
+    let status = aiStatus;
+    if (!status) {
+      try {
+        status = await api.aiStatus();
+        setAiStatus(status);
+      } catch (caught) {
+        setSyncRecoveryError(
+          readableError(caught, "Could not check the configured AI provider."),
+        );
+        return;
+      }
+    }
+    const provider = status.provider;
+    setSyncRecoveryError(null);
+    try {
+      const session = await api.startAiConflictResolution({
+        repositoryId: selectedId,
+        provider,
+      });
+      if (!session) return;
+      setAiTerminal({ session, provider, action: "resolve-conflicts" });
+      setAiStatus((current) =>
+        current ? { ...current, conflictDisclosureAccepted: true } : current,
+      );
+    } catch (caught) {
+      setSyncRecoveryError(
+        readableError(caught, "Could not open the AI conflict assistant."),
+      );
+    }
+  }
+
+  function stashForSyncRecovery() {
+    if (syncRecovery?.outcome === "diverged") {
+      setSyncRecoveryAfterStash(syncRecovery);
+    }
+    setSyncRecovery(null);
+    setSyncRecoveryError(null);
+    openStashModal();
+  }
+
+  function viewSyncConflicts() {
+    const firstConflict =
+      syncRecovery?.outcome === "paused"
+        ? syncRecovery.conflictFiles[0]
+        : null;
+    setSyncRecovery(null);
+    setSyncRecoveryError(null);
+    setSelectedCommit(null);
+    setSelectedStash(null);
+    setCompareRequest(
+      firstConflict
+        ? {
+            path: firstConflict,
+            scope: "conflict",
+          }
+        : null,
+    );
+    selectTab("changes");
+  }
+
+  async function openSyncRecoveryTerminal(
+    recovery: Extract<SyncResult, { outcome: "paused" }> | null =
+      syncRecovery?.outcome === "paused" ? syncRecovery : null,
+  ) {
+    if (!selectedId || !recovery) return;
+    const command = recovery.conflictFiles.length
+      ? "git status"
+      : `git ${recovery.operation} --continue`;
+    setSyncRecoveryError(null);
+    try {
+      await onOpenRecoveryTerminal(selectedId, command);
+      if (syncRecovery?.outcome === "paused") setSyncRecovery(null);
+    } catch (caught) {
+      setSyncRecoveryError(
+        readableError(caught, "Could not open the recovery terminal."),
       );
     }
   }
@@ -2709,6 +3097,8 @@ export function RepositoryWorkspace({
     resizeStart.current = { repo: repoWidth, context: contextWidth };
   }
 
+  const rootKind = data?.rootKind ?? "workspace";
+  const viewingRepository = rootKind === "repository";
   const stats = useMemo(
     () => ({
       total: activeRepositories.length,
@@ -2741,6 +3131,14 @@ export function RepositoryWorkspace({
     untracked: changes.filter((change) => change.scope === "untracked").length,
   };
   const hasConflicts = changes.some((change) => change.scope === "conflict");
+  const pausedRecovery = selectedRepository
+    ? pausedResultFor(selectedRepository)
+    : null;
+  const conflictProviderLabel =
+    aiStatus?.providers[aiStatus.provider].label ?? "AI";
+  const conflictProviderReady = Boolean(
+    aiStatus?.providers[aiStatus.provider].authenticated,
+  );
   const commitDisabledReason = hasConflicts
     ? "Resolve conflicts before committing"
     : stagedCount === 0
@@ -2756,31 +3154,57 @@ export function RepositoryWorkspace({
     <main
       className={`repository-workspace ${
         viewerExpanded ? "is-viewer-expanded" : ""
-      }`}
+      } ${viewingRepository ? "is-single-repository" : ""}`}
       style={workspaceStyle}
     >
       <section className="workspace-overview">
-        <button
-          className="icon-button mobile-menu-button"
-          type="button"
-          onClick={() => setMobileOpen(true)}
-          aria-label="Open repositories"
-        >
-          <Menu size={18} />
-        </button>
+        {!viewingRepository && (
+          <button
+            className="icon-button mobile-menu-button"
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            aria-label="Open repositories"
+          >
+            <Menu size={18} />
+          </button>
+        )}
         <div className="overview-title">
-          <span className="eyebrow">Local Git workspace</span>
+          <span className="eyebrow">
+            {viewingRepository
+              ? "Local Git repository"
+              : rootKind === "hybrid"
+                ? "Git repository workspace"
+                : "Local Git workspace"}
+          </span>
           <strong>{data?.workspaceName || "Workspace"}</strong>
-          {loading && <span>Scanning repositories…</span>}
+          {loading && (
+            <span>
+              {viewingRepository ? "Scanning repository…" : "Scanning repositories…"}
+            </span>
+          )}
         </div>
         <div className="overview-stats">
-          <div>
-            <strong>{stats.total}</strong>
-            <span>Repositories</span>
-          </div>
-          <div className={stats.changed ? "has-signal" : ""}>
-            <strong>{stats.changed}</strong>
-            <span>Changed</span>
+          {!viewingRepository && (
+            <div>
+              <strong>{stats.total}</strong>
+              <span>Repositories</span>
+            </div>
+          )}
+          <div
+            className={
+              (viewingRepository
+                ? selectedRepository?.summary.files
+                : stats.changed)
+                ? "has-signal"
+                : ""
+            }
+          >
+            <strong>
+              {viewingRepository
+                ? selectedRepository?.summary.files ?? 0
+                : stats.changed}
+            </strong>
+            <span>{viewingRepository ? "Changed files" : "Changed"}</span>
           </div>
           <div className={stats.conflicts ? "has-danger" : ""}>
             <strong>{stats.conflicts}</strong>
@@ -2812,7 +3236,11 @@ export function RepositoryWorkspace({
             disabled={Boolean(fetching || syncing || changeBusy || stashBusy)}
           >
             <CloudDownload className={fetching === "all" ? "is-spinning" : ""} size={15} />
-            {fetching === "all" ? "Fetching…" : "Fetch all"}
+            {fetching === "all"
+              ? "Fetching…"
+              : viewingRepository
+                ? "Fetch"
+                : "Fetch all"}
           </button>
         </div>
       </section>
@@ -2852,26 +3280,31 @@ export function RepositoryWorkspace({
       )}
 
       <section className="workspace-panels" onPointerDown={rememberResizeStart}>
-        <RepositoryNavigator
-          repositories={repositories}
-          loading={loading}
-          selectedId={selectedId}
-          onSelect={selectRepository}
-          mobileOpen={mobileOpen}
-          onCloseMobile={() => setMobileOpen(false)}
-          searchInputRef={searchInputRef}
-          onToggleFavourite={(groupId, favourite) =>
-            void toggleFavourite(groupId, favourite)
-          }
-          onToggleArchived={(groupId, archived) =>
-            void toggleArchived(groupId, archived)
-          }
-          onRenameRepository={renameRepository}
-          onOpenBranches={(repositoryId, anchor) =>
-            void openBranchPicker(repositoryId, anchor)
-          }
-        />
-        <ResizeHandle side="repository" onResize={resizeRepo} />
+        {!viewingRepository && (
+          <>
+            <RepositoryNavigator
+              repositories={repositories}
+              rootKind={rootKind}
+              loading={loading}
+              selectedId={selectedId}
+              onSelect={selectRepository}
+              mobileOpen={mobileOpen}
+              onCloseMobile={() => setMobileOpen(false)}
+              searchInputRef={searchInputRef}
+              onToggleFavourite={(groupId, favourite) =>
+                void toggleFavourite(groupId, favourite)
+              }
+              onToggleArchived={(groupId, archived) =>
+                void toggleArchived(groupId, archived)
+              }
+              onRenameRepository={renameRepository}
+              onOpenBranches={(repositoryId, anchor) =>
+                void openBranchPicker(repositoryId, anchor)
+              }
+            />
+            <ResizeHandle side="repository" onResize={resizeRepo} />
+          </>
+        )}
 
         <aside className="context-panel">
           {selectedRepository ? (
@@ -2880,12 +3313,31 @@ export function RepositoryWorkspace({
                 <div className="repository-header__top">
                   <RepositoryMark repository={selectedRepository} size="header" />
                   <div>
-                    <h2>{repositoryDisplayName(selectedRepository)}</h2>
+                    <div className="repository-header__title">
+                      <h2>{repositoryDisplayName(selectedRepository)}</h2>
+                      {selectedRepository.isWorkspaceRoot && (
+                        <span
+                          className="repository-root-badge"
+                          title="Selected folder"
+                        >
+                          Root
+                        </span>
+                      )}
+                    </div>
                     <button
                       className="repository-header__branch"
                       type="button"
-                      aria-label={`Switch branch for ${repositoryDisplayName(selectedRepository)}`}
-                      data-tooltip="Switch branch"
+                      aria-label={
+                        selectedRepository.operation
+                          ? `${selectedRepository.operation === "rebase" ? "Rebase" : "Merge"} paused for ${repositoryDisplayName(selectedRepository)}`
+                          : `Switch branch for ${repositoryDisplayName(selectedRepository)}`
+                      }
+                      data-tooltip={
+                        selectedRepository.operation
+                          ? "Finish or abort the paused operation before switching branches"
+                          : "Switch branch"
+                      }
+                      disabled={Boolean(selectedRepository.operation)}
                       onClick={(event) =>
                         void openBranchPicker(
                           selectedRepository.id,
@@ -2895,7 +3347,9 @@ export function RepositoryWorkspace({
                     >
                       <GitBranch size={12} />
                       <span>
-                        {selectedRepository.detached
+                        {selectedRepository.operation
+                          ? `${selectedRepository.operation === "rebase" ? "Rebase" : "Merge"} paused`
+                          : selectedRepository.detached
                           ? "Detached HEAD"
                           : selectedRepository.branch ||
                             (selectedRepository.unborn
@@ -2948,14 +3402,28 @@ export function RepositoryWorkspace({
                   </div>
                 </div>
                 <div className="repository-header__meta">
-                  {selectedRepository.upstream ? (
+                  {selectedRepository.upstream || selectedRepository.operation ? (
                     <button
-                      className="sync-control"
+                      className={`sync-control ${
+                        selectedRepository.operation ? "is-paused" : ""
+                      }`}
                       type="button"
-                      title="Pull incoming changes, then push outgoing changes"
-                      aria-label={`Sync changes: ${selectedRepository.incoming} incoming, ${selectedRepository.outgoing} outgoing`}
+                      title={
+                        selectedRepository.operation
+                          ? `Resume ${selectedRepository.operation} recovery`
+                          : "Pull incoming changes, then push outgoing changes"
+                      }
+                      aria-label={
+                        selectedRepository.operation
+                          ? `Resume ${selectedRepository.operation} recovery: ${selectedRepository.summary.conflicts} conflicts`
+                          : `Sync changes: ${selectedRepository.incoming} incoming, ${selectedRepository.outgoing} outgoing`
+                      }
                       disabled={Boolean(syncing || fetching || changeBusy || stashBusy)}
-                      onClick={() => void syncSelectedRepository(selectedRepository.id)}
+                      onClick={() =>
+                        selectedRepository.operation
+                          ? void openPausedRecovery(selectedRepository)
+                          : void syncSelectedRepository(selectedRepository.id)
+                      }
                     >
                       <RefreshCw
                         className={
@@ -2963,12 +3431,22 @@ export function RepositoryWorkspace({
                         }
                         size={11}
                       />
-                      <span>
-                        <ArrowDown size={11} /> {selectedRepository.incoming} incoming
-                      </span>
-                      <span>
-                        <ArrowUp size={11} /> {selectedRepository.outgoing} outgoing
-                      </span>
+                      {selectedRepository.operation ? (
+                        <span>
+                          {selectedRepository.operation === "rebase"
+                            ? "Rebase paused"
+                            : "Merge paused"}
+                        </span>
+                      ) : (
+                        <>
+                          <span>
+                            <ArrowDown size={11} /> {selectedRepository.incoming} incoming
+                          </span>
+                          <span>
+                            <ArrowUp size={11} /> {selectedRepository.outgoing} outgoing
+                          </span>
+                        </>
+                      )}
                     </button>
                   ) : (
                     <span className="no-upstream">No upstream configured</span>
@@ -3040,6 +3518,29 @@ export function RepositoryWorkspace({
                   </button>
                 ))}
               </div>
+              {tab === "changes" &&
+                selectedRepository.operation &&
+                pausedRecovery && (
+                  <PausedSyncBanner
+                    repository={selectedRepository}
+                    providerLabel={conflictProviderLabel}
+                    aiReady={conflictProviderReady}
+                    busy={Boolean(
+                      syncing || fetching || changeBusy || stashBusy,
+                    )}
+                    onShowRecovery={() =>
+                      void openPausedRecovery(selectedRepository)
+                    }
+                    onOpenTerminal={() =>
+                      void openSyncRecoveryTerminal(pausedRecovery)
+                    }
+                    onStartAi={() =>
+                      conflictProviderReady
+                        ? void startAiConflictResolution(pausedRecovery)
+                        : void openPausedRecovery(selectedRepository)
+                    }
+                  />
+                )}
               {tab === "changes" && (
                 <div className="commit-toolbar">
                   <span>
@@ -3473,7 +3974,7 @@ export function RepositoryWorkspace({
           )}
         </section>
       </section>
-      {mobileOpen && (
+      {mobileOpen && !viewingRepository && (
         <button
           className="mobile-scrim"
           type="button"
@@ -3492,10 +3993,42 @@ export function RepositoryWorkspace({
           creating={stashBusy === "create"}
           onMessageChange={setStashMessage}
           onIncludeUntrackedChange={setStashIncludeUntracked}
-          onClose={() => {
-            if (stashBusy !== "create") setStashModalPath(undefined);
-          }}
+          onClose={closeStashModal}
           onCreate={() => void createSelectedStash()}
+        />
+      )}
+      {syncRecovery && (
+        <SyncRecoveryModal
+          result={syncRecovery}
+          strategy={syncStrategy}
+          busy={syncing === syncRecovery.repositoryId}
+          error={syncRecoveryError}
+          aiStatus={aiStatus}
+          suspended={aiTerminal?.action === "resolve-conflicts"}
+          onStrategyChange={setSyncStrategy}
+          onResolve={() =>
+            void syncSelectedRepository(
+              syncRecovery.repositoryId,
+              syncStrategy,
+            )
+          }
+          onClose={() => {
+            if (!syncing) {
+              setSyncRecovery(null);
+              setSyncRecoveryError(null);
+            }
+          }}
+          onStash={stashForSyncRecovery}
+          onViewConflicts={viewSyncConflicts}
+          onOpenTerminal={() => void openSyncRecoveryTerminal()}
+          onStartAi={() => void startAiConflictResolution()}
+          onProviderChange={(provider) => void changeAiPreferences(provider)}
+          onModelChange={(model) =>
+            aiStatus && void changeAiPreferences(aiStatus.provider, model)
+          }
+          onInstallAi={() => void startAiTerminal("install")}
+          onSignInAi={() => void startAiTerminal("login")}
+          onLocateAi={() => void locateAiExecutable()}
         />
       )}
       {commitModalOpen && (

@@ -134,6 +134,7 @@ describe("SettingsStore", () => {
         claude: "/usr/local/bin/claude",
       },
       disclosureAccepted: { codex: true, claude: false },
+      conflictDisclosureAccepted: { codex: false, claude: false },
     });
     expect(JSON.stringify(restored.data)).not.toContain("env");
   });
@@ -165,7 +166,7 @@ describe("SettingsStore", () => {
 
     await store.load();
 
-    expect(store.data.version).toBe(6);
+    expect(store.data.version).toBe(7);
     expect(store.data.lastWorkspacePath).toBe("/tmp/legacy-workspace");
     expect(store.profilesFor("/tmp/legacy-workspace")).toHaveLength(1);
     expect(store.aiSettings()).toEqual({
@@ -173,6 +174,7 @@ describe("SettingsStore", () => {
       models: { codex: "gpt-5.6-luna", claude: "haiku" },
       executablePaths: { codex: null, claude: null },
       disclosureAccepted: { codex: false, claude: false },
+      conflictDisclosureAccepted: { codex: false, claude: false },
     });
   });
 
@@ -200,6 +202,25 @@ describe("SettingsStore", () => {
       provider: "codex",
       executablePaths: { codex: "/opt/homebrew/bin/codex" },
       disclosureAccepted: { codex: true, claude: false },
+    });
+  });
+
+  it("tracks conflict-agent consent separately from commit-draft consent", async () => {
+    const directory = temporaryDirectory("local-status-settings-ai-consent-");
+    const settingsPath = join(directory, "settings.json");
+    const store = new SettingsStore(settingsPath);
+    await store.load();
+
+    await store.acceptAiDisclosure("codex");
+    expect(store.aiSettings()).toMatchObject({
+      disclosureAccepted: { codex: true, claude: false },
+      conflictDisclosureAccepted: { codex: false, claude: false },
+    });
+
+    await store.acceptAiConflictDisclosure("codex");
+    expect(store.aiSettings()).toMatchObject({
+      disclosureAccepted: { codex: true, claude: false },
+      conflictDisclosureAccepted: { codex: true, claude: false },
     });
   });
 

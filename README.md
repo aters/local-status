@@ -12,7 +12,7 @@ in one folder.
 - Selected-root or direct-child repository discovery
 - Working changes, commits, file trees, and incoming/outgoing status
 - Side-by-side and inline Monaco diffs with rendered Markdown previews
-- Stage, unstage, stash, commit, revert, fetch, and fast-forward-only sync
+- Stage, unstage, stash, commit, revert, fetch, and explicit divergence recovery
 - Open pull requests created by you or waiting for your review
 - Optional commit-message drafts from an installed Codex or Claude CLI
 - Interactive terminals and detected package scripts
@@ -32,14 +32,7 @@ Status does not read or store its credentials.
 - Node.js 22.13+
 - npm
 - Git
-- Xcode Command Line Tools
 - Optional: [GitHub CLI](https://cli.github.com/) for the Pull Requests view
-
-Install the command-line tools if needed:
-
-```bash
-xcode-select --install
-```
 
 ## Install
 
@@ -51,7 +44,9 @@ npm start
 ```
 
 On first launch, choose either a Git repository or a folder whose immediate
-children are Git repositories.
+children are Git repositories. When a selected Git repository also contains
+immediate child repositories, Local Status shows the root and children together
+as a repository workspace.
 
 ## Usage
 
@@ -76,8 +71,21 @@ model still receives the complete staged file list, status and statistics, plus
 recent commit subjects. Local Status marks the draft as truncated so you can
 review it more carefully.
 
-Sync pulls the configured upstream with `--ff-only`, then pushes local commits.
-It stops instead of creating an implicit merge when branches have diverged.
+Sync fetches the configured upstream, fast-forwards when possible, then pushes
+local commits. When local and remote history have diverged, Local Status pauses
+and asks you to explicitly choose **Rebase** or **Merge**. Rebase is recommended
+for a linear history, but never runs without confirmation. Working changes must
+be committed, reverted, or stashed first, and Local Status never force-pushes.
+
+If reconciliation creates conflicts, Git remains paused and the conflicted files
+appear in Changes. A persistent recovery panel keeps the terminal, AI assistance,
+and full recovery details available after you inspect a file; Sync also changes
+to Resume rebase or Resume merge. Edit conflicts in your usual editor or
+terminal, then mark the files resolved in Changes. Continue or abort the
+operation in a repository terminal. You can optionally open an interactive
+Codex or Claude session to resolve and stage conflicted files. The agent uses
+normal permission prompts and is instructed not to continue or abort Git,
+commit, push, or discard unrelated work.
 
 The **Pull Requests** screen shows open PRs created by the active GitHub CLI
 account and PRs currently requesting that account's review. Results are limited
@@ -96,9 +104,10 @@ Use **New terminal** to open a shell in a repository. **Run script** lists
 scripts detected from `package.json`. The Services screen keeps running
 sessions available while you move between repositories.
 
-The repository interface does not expose checkout, merge, rebase, or automatic
-push controls. Terminals are unrestricted local shells, so only run commands
-from repositories you trust.
+The repository interface exposes branch switching and Sync-specific merge or
+rebase recovery, but not general-purpose history controls or force-push.
+Terminals and interactive AI agents can run local commands, so only use them in
+repositories you trust and review their proposed actions.
 
 ### Keyboard shortcuts
 
@@ -141,9 +150,11 @@ npm run postinstall
 
 ### No repositories appear
 
-When the selected folder is a Git repository, Local Status shows that repository.
-Otherwise, it scans immediate child folders. More deeply nested repositories are
-not included.
+When the selected folder is a Git repository, Local Status shows that repository
+and scans its immediate children for independent repositories or initialized
+submodules. The selected repository is marked **Root** when children are found.
+For non-Git folders, Local Status scans immediate child folders. More deeply
+nested repositories are not included.
 
 ### AI message generation is unavailable
 

@@ -29,13 +29,15 @@
     .settings-section,
     .onboarding-card,
     .commit-modal,
+    .sync-recovery-modal,
     .ai-terminal-modal,
     .quick-open,
     .workspace-menu,
     .branch-picker,
     .repository-run-menu,
     .repository-context-menu,
-    .commit-modal__ai-popover
+    .commit-modal__ai-popover,
+    .paused-sync-banner
   ) {
   border-color: var(--material-border);
   color: var(--text);
@@ -65,7 +67,8 @@
     .service-launcher select,
     .profile-editor input,
     .commit-modal__ai-settings-button,
-    .commit-modal__ai-picker select
+    .commit-modal__ai-picker select,
+    .sync-recovery-modal__ai-pickers select
   ) {
   border-color: var(--material-border);
   color: var(--text-soft);
@@ -87,6 +90,26 @@
   border-color: var(--material-border-strong);
   color: var(--text);
   background: var(--material-control-hover);
+}
+
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
+  .sync-control.is-paused {
+  border-color: color-mix(in srgb, var(--coral) 42%, var(--material-border));
+  color: var(--coral);
+  background: color-mix(in srgb, var(--coral) 9%, var(--material-control));
+}
+
+:root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
+  .paused-sync-banner {
+  border-color: color-mix(in srgb, var(--coral) 34%, var(--material-border));
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--coral) 8%, transparent),
+      transparent 58%
+    ),
+    var(--material-panel-strong);
+  box-shadow: var(--material-control-shadow);
 }
 
 /* Materialize the complete repository/context pane hierarchy. */
@@ -363,6 +386,8 @@
 :root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .commit-modal__header,
+    .sync-recovery-modal__header,
+    .sync-recovery-modal__footer,
     .ai-terminal-modal__header,
     .branch-picker__header,
     .quick-open__search,
@@ -377,6 +402,7 @@
 :root:is([data-material="glass"], [data-material="neumorphic"], [data-material="liquid-glass"])
   :where(
     .commit-modal__mark,
+    .sync-recovery-modal__mark,
     .ai-terminal-modal__header > span,
     .pull-request-section__icon,
     .viewer-file-icon,
@@ -392,6 +418,11 @@
   :where(
     .commit-modal__context,
     .commit-modal__composer textarea,
+    .sync-recovery-modal__repository,
+    .sync-recovery-modal__strategies > label,
+    .sync-recovery-modal__conflicts,
+    .sync-recovery-modal__commands,
+    .sync-recovery-modal__ai,
     .branch-picker__search,
     .quick-open__body,
     .markdown-find,
@@ -893,6 +924,7 @@
     .settings-section,
     .onboarding-card,
     .commit-modal,
+    .sync-recovery-modal,
     .ai-terminal-modal,
     .quick-open,
     .workspace-menu,

@@ -38,7 +38,9 @@ export function AiTerminalModal({
   const title =
     action === "install"
       ? `Install ${providerLabel} CLI`
-      : `Sign in to ${providerLabel}`;
+      : action === "login"
+        ? `Sign in to ${providerLabel}`
+        : `Resolve conflicts with ${providerLabel}`;
   const running = ["running", "stopping"].includes(currentSession.status);
 
   useEffect(() => {
@@ -118,13 +120,19 @@ export function AiTerminalModal({
           </span>
           <div>
             <p className="eyebrow">
-              {action === "install" ? "Provider setup" : "Provider sign-in"}
+              {action === "install"
+                ? "Provider setup"
+                : action === "login"
+                  ? "Provider sign-in"
+                  : "Interactive conflict assistant"}
             </p>
             <h2 id="ai-terminal-title">{title}</h2>
             <p id="ai-terminal-description">
               {action === "install"
                 ? "Follow the installer and account prompts below."
-                : "Complete the interactive account prompts below."}
+                : action === "login"
+                  ? "Complete the interactive account prompts below."
+                  : "Review every proposed edit and command. The agent stops after staging resolved files."}
             </p>
           </div>
           <button
@@ -155,7 +163,9 @@ export function AiTerminalModal({
             <i className={`session-status is-${currentSession.status}`} />
             {running
               ? "The terminal keeps running if you close this window."
-              : "Setup terminal finished. Close to re-check the provider."}
+              : action === "resolve-conflicts"
+                ? "Agent session finished. Close to refresh conflicts."
+                : "Setup terminal finished. Close to re-check the provider."}
           </span>
           <div>
             {running && (

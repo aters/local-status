@@ -63,6 +63,42 @@ function configureUser(repository) {
   git(repository, "config", "user.name", "Local Status Test");
 }
 
+function divergentRepository(prefix, { conflicts = false } = {}) {
+  const workspace = temporaryDirectory(`${prefix}-workspace-`);
+  const remote = temporaryDirectory(`${prefix}-remote-`);
+  const producer = temporaryDirectory(`${prefix}-producer-`);
+  const repository = join(workspace, "repository");
+
+  execFileSync("git", ["init", "--bare", remote], { stdio: "ignore" });
+  execFileSync("git", ["init", "-b", "main", repository], { stdio: "ignore" });
+  configureUser(repository);
+  writeFileSync(join(repository, "base.txt"), conflicts ? "base\n" : "base\n");
+  git(repository, "add", "base.txt");
+  git(repository, "commit", "-m", "Base");
+  git(repository, "remote", "add", "origin", remote);
+  git(repository, "push", "-u", "origin", "main");
+  git(remote, "symbolic-ref", "HEAD", "refs/heads/main");
+  execFileSync("git", ["clone", remote, producer], { stdio: "ignore" });
+  configureUser(producer);
+
+  if (conflicts) {
+    writeFileSync(join(repository, "base.txt"), "local\n");
+    git(repository, "commit", "-am", "Local change");
+    writeFileSync(join(producer, "base.txt"), "remote\n");
+    git(producer, "commit", "-am", "Remote change");
+  } else {
+    writeFileSync(join(repository, "local.txt"), "local\n");
+    git(repository, "add", "local.txt");
+    git(repository, "commit", "-m", "Local change");
+    writeFileSync(join(producer, "remote.txt"), "remote\n");
+    git(producer, "add", "remote.txt");
+    git(producer, "commit", "-m", "Remote change");
+  }
+  git(producer, "push", "origin", "main");
+  setWorkspaceRoot(workspace);
+  return { workspace, remote, producer, repository };
+}
+
 describe("listener presentation", () => {
   it("deduplicates IPv4 and IPv6 rows that render as the same listener", () => {
     expect(
@@ -729,7 +765,7 @@ describe("local Git integration", () => {
     expect(readFileSync(join(producer, "outgoing.txt"), "utf8")).toBe("from local\n");
   });
 
-  it("refuses sync without an upstream and refuses divergent implicit merges", async () => {
+  it("refuses sync without an upstream and reports divergence without mutating history", async () => {
     const workspace = temporaryDirectory("local-status-sync-safety-");
     const remote = temporaryDirectory("local-status-sync-safety-remote-");
     const producer = temporaryDirectory("local-status-sync-safety-producer-");
@@ -766,9 +802,99 @@ describe("local Git integration", () => {
     await expect(syncRepository("no-upstream")).rejects.toMatchObject({
       code: "NO_UPSTREAM",
     });
-    await expect(syncRepository("diverged")).rejects.toBeInstanceOf(GitServiceError);
+    await expect(syncRepository("diverged")).resolves.toMatchObject({
+      outcome: "diverged",
+      branch: "main",
+      upstream: "origin/main",
+      incoming: 1,
+      outgoing: 1,
+      workingTreeDirty: false,
+    });
     expect(git(remote, "log", "--format=%s", "-1", "main")).toBe("Remote change");
   });
+
+  it("rebases a divergent branch and completes the push", async () => {
+    const { remote, repository } = divergentRepository("local-status-rebase");
+
+    await expect(syncRepository("repository")).resolves.toMatchObject({
+      outcome: "diverged",
+      incoming: 1,
+      outgoing: 1,
+    });
+    const result = await syncRepository("repository", "rebase");
+
+    expect(result).toMatchObject({
+      outcome: "synced",
+      pulled: 1,
+      pushed: 1,
+      incoming: 0,
+      outgoing: 0,
+    });
+    expect(git(repository, "log", "--format=%s", "-2").split("\n")).toEqual([
+      "Local change",
+      "Remote change",
+    ]);
+    expect(git(remote, "log", "--format=%s", "-1", "main")).toBe("Local change");
+  });
+
+  it("merges a divergent branch and completes the push without rewriting local commits", async () => {
+    const { remote, repository } = divergentRepository("local-status-merge");
+    const localCommit = git(repository, "rev-parse", "HEAD");
+
+    const result = await syncRepository("repository", "merge");
+
+    expect(result).toMatchObject({
+      outcome: "synced",
+      pulled: 1,
+      pushed: 2,
+      incoming: 0,
+      outgoing: 0,
+    });
+    expect(git(repository, "rev-list", "--parents", "-1", "HEAD").split(" ")).toHaveLength(3);
+    expect(git(repository, "merge-base", "--is-ancestor", localCommit, "HEAD")).toBe("");
+    expect(git(remote, "rev-parse", "main")).toBe(git(repository, "rev-parse", "HEAD"));
+  });
+
+  it("blocks an explicit divergence strategy while working changes are present", async () => {
+    const { repository } = divergentRepository("local-status-dirty");
+    writeFileSync(join(repository, "working.txt"), "not committed\n");
+
+    await expect(syncRepository("repository")).resolves.toMatchObject({
+      outcome: "diverged",
+      workingTreeDirty: true,
+    });
+    await expect(syncRepository("repository", "rebase")).rejects.toMatchObject({
+      code: "DIRTY_WORKTREE",
+    });
+  });
+
+  it.each(["rebase", "merge"])(
+    "leaves a conflicted %s paused and reports it on later sync attempts",
+    async (strategy) => {
+      const { workspace } = divergentRepository(
+        `local-status-${strategy}-conflict`,
+        { conflicts: true },
+      );
+
+      const paused = await syncRepository("repository", strategy);
+      expect(paused).toMatchObject({
+        outcome: "paused",
+        operation: strategy,
+        conflictFiles: ["base.txt"],
+      });
+      const summaries = await listRepositorySummaries();
+      expect(summaries.repositories[0]).toMatchObject({
+        operation: strategy,
+        summary: { conflicts: 1 },
+      });
+      setWorkspaceRoot(workspace);
+      await expect(syncRepository("repository")).resolves.toMatchObject({
+        outcome: "paused",
+        operation: strategy,
+        conflictFiles: ["base.txt"],
+      });
+    },
+  );
 
   it("discovers direct repositories and reports changes, comparisons, files, fetch, and divergence", async () => {
     const workspace = temporaryDirectory("local-status-workspace-");
@@ -799,6 +925,7 @@ describe("local Git integration", () => {
 
     setWorkspaceRoot(workspace);
     const summaries = await listRepositorySummaries();
+    expect(summaries.rootKind).toBe("workspace");
     expect(summaries.repositories).toHaveLength(1);
     expect(summaries.repositories[0]).toMatchObject({
       id: "product-api",
@@ -904,7 +1031,28 @@ describe("local Git integration", () => {
     ).rejects.toBeInstanceOf(GitServiceError);
   });
 
-  it("uses the workspace root when the selected folder is a Git repository", async () => {
+  it("loads a selected Git repository without workspace navigation", async () => {
+    const repository = temporaryDirectory("local-status-single-repository-");
+    execFileSync("git", ["init", "-b", "main", repository], { stdio: "ignore" });
+    configureUser(repository);
+    writeFileSync(join(repository, "tracked.txt"), "single repository\n");
+    git(repository, "add", "tracked.txt");
+    git(repository, "commit", "-m", "Initial commit");
+
+    setWorkspaceRoot(repository);
+    const result = await listRepositorySummaries();
+
+    expect(result.rootKind).toBe("repository");
+    expect(result.repositories).toHaveLength(1);
+    expect(result.repositories[0]).toMatchObject({
+      id: basename(repository),
+      displayName: basename(repository),
+      isWorkspaceRoot: true,
+      branch: "main",
+    });
+  });
+
+  it("loads a Git root and its immediate child repositories as a hybrid workspace", async () => {
     const workspace = temporaryDirectory("local-status-git-workspace-");
     execFileSync("git", ["init", "-b", "main", workspace], { stdio: "ignore" });
     configureUser(workspace);
@@ -922,9 +1070,17 @@ describe("local Git integration", () => {
     setWorkspaceRoot(workspace);
     const result = await listRepositorySummaries();
 
-    expect(result.repositories).toHaveLength(1);
+    expect(result.rootKind).toBe("hybrid");
+    expect(result.repositories).toHaveLength(2);
     expect(result.repositories[0]).toMatchObject({
       id: basename(workspace),
+      displayName: basename(workspace),
+      isWorkspaceRoot: true,
+      branch: "main",
+    });
+    expect(result.repositories[1]).toMatchObject({
+      id: "child-repository",
+      isWorkspaceRoot: false,
       branch: "main",
     });
     const changes = await repositoryChanges(basename(workspace));

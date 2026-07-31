@@ -95,9 +95,9 @@ function Onboarding({
         <p className="eyebrow">Local-first development workspace</p>
         <h1>Every repository, one clear view.</h1>
         <p className="onboarding-copy">
-          Choose a folder containing your Git repositories. Local Status will show
-          working changes, commits, file trees and interactive terminals without
-          sending anything off this machine.
+          Choose a Git repository or a folder containing repositories. Local Status
+          will show working changes, commits, file trees and interactive terminals
+          without sending anything off this machine.
         </p>
         {error && <div className="onboarding-error">{error}</div>}
         <button
@@ -107,7 +107,7 @@ function Onboarding({
           onClick={() => void onChoose()}
         >
           <FolderOpen size={18} />
-          {busy ? "Opening…" : "Choose workspace"}
+          {busy ? "Opening…" : "Choose repository or workspace"}
         </button>
         {state.recent.length > 0 && (
           <div className="recent-workspaces">
@@ -176,6 +176,9 @@ export function App() {
     (WorkspaceFile & { requestId: number }) | null
   >(null);
   const workspacePath = workspace?.current?.path ?? null;
+  const rootKind = repositories?.rootKind ?? "workspace";
+  const viewingRepository = rootKind === "repository";
+  const viewingHybrid = rootKind === "hybrid";
   const resolvedColorScheme = resolveColorScheme(
     theme,
     appearance,
@@ -490,6 +493,24 @@ export function App() {
     updateRoute({ view: "services", terminal: session.id }, "push");
   }
 
+  async function openRecoveryTerminal(
+    repositoryId: string,
+    command: string,
+  ) {
+    const session = await api.createTerminal({
+      repositoryId,
+      kind: "shell",
+    });
+    const namedSession = await api.renameTerminal(
+      session.id,
+      `${repositoryId} · Sync recovery`,
+    );
+    await api.writeTerminal(namedSession.id, command);
+    setActiveSessionId(namedSession.id);
+    setView("services");
+    updateRoute({ view: "services", terminal: namedSession.id }, "push");
+  }
+
   async function startAiTerminal(
     repositoryId: string,
     provider: AiProvider,
@@ -556,18 +577,41 @@ export function App() {
           <ProductLogo className="brand-mark" />
           <div>
             <strong>Local Status</strong>
-            <span>Private desktop workspace</span>
+            <span>
+              {viewingRepository
+                ? "Private local repository"
+                : viewingHybrid
+                  ? "Repository workspace"
+                  : "Private desktop workspace"}
+            </span>
           </div>
         </div>
-        <nav className="app-nav" aria-label="Workspace sections">
+        <nav
+          className="app-nav"
+          aria-label={
+            viewingRepository
+              ? "Repository sections"
+              : viewingHybrid
+                ? "Repository workspace sections"
+                : "Workspace sections"
+          }
+        >
           <button
             type="button"
-            aria-label="Repositories"
+            aria-label={
+              viewingRepository
+                ? "Repository"
+                : "Repositories"
+            }
             className={view === "repositories" ? "is-active" : ""}
             onClick={() => selectView("repositories")}
           >
             <GitBranch size={15} />
-            <span>Repositories</span>
+            <span>
+              {viewingRepository
+                ? "Repository"
+                : "Repositories"}
+            </span>
           </button>
           <button
             type="button"
@@ -591,6 +635,7 @@ export function App() {
         <div className="app-header__actions">
           <WorkspaceSwitcher
             current={workspace.current}
+            rootKind={rootKind}
             recent={workspace.recent}
             busy={workspaceBusy}
             error={workspaceError}
@@ -620,6 +665,7 @@ export function App() {
           onRefresh={refreshRepositories}
           onStartTerminal={startTerminal}
           onStartAiTerminal={startAiTerminal}
+          onOpenRecoveryTerminal={openRecoveryTerminal}
           theme={theme}
           colorScheme={resolvedColorScheme}
           findRequest={findRequest}

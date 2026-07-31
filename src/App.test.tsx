@@ -10,7 +10,11 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
-import type { ChangeItem, LocalStatusBridge } from "./types";
+import type {
+  ChangeItem,
+  LocalStatusBridge,
+  RepositoriesResponse,
+} from "./types";
 
 vi.mock("./components/MonacoDiff", () => ({
   default: ({ findRequest }: { findRequest?: number }) => (
@@ -38,12 +42,20 @@ vi.mock("./components/TerminalPane", () => ({
   ),
 }));
 
-const repositories = {
+const repositories: RepositoriesResponse = {
   generatedAt: new Date().toISOString(),
+  rootKind: "workspace" as "repository" | "workspace" | "hybrid",
   workspaceName: "engineering",
   repositories: [
     {
       id: "clean-api",
+      groupId: "clean-api",
+      groupName: "clean-api",
+      remoteIdentity: null,
+      isPrimaryWorktree: true,
+      isWorkspaceRoot: false,
+      favourite: false,
+      archived: false,
       branch: "main",
       detached: false,
       unborn: false,
@@ -65,6 +77,13 @@ const repositories = {
     },
     {
       id: "changed-web",
+      groupId: "changed-web",
+      groupName: "changed-web",
+      remoteIdentity: null,
+      isPrimaryWorktree: true,
+      isWorkspaceRoot: false,
+      favourite: false,
+      archived: false,
       branch: "feature",
       detached: false,
       unborn: false,
@@ -313,6 +332,7 @@ function createBridge(current = true) {
         dropped: true,
       })),
       sync: vi.fn(async (repositoryId) => ({
+        outcome: "synced" as const,
         repositoryId,
         upstream: "origin/feature",
         pulled: 2,
@@ -378,6 +398,7 @@ function createBridge(current = true) {
           claude: "haiku",
         },
         disclosureAccepted: false,
+        conflictDisclosureAccepted: false,
         providers: aiProviders,
       })),
       setPreferences: vi.fn(async (provider, model) => ({
@@ -388,6 +409,7 @@ function createBridge(current = true) {
           claude: provider === "claude" ? model : "haiku",
         },
         disclosureAccepted: false,
+        conflictDisclosureAccepted: false,
         providers: aiProviders,
       })),
       chooseExecutable: vi.fn(),
@@ -399,6 +421,7 @@ function createBridge(current = true) {
         provider: "codex" as const,
         model: "gpt-5.6-luna",
       })),
+      startConflictResolution: vi.fn(),
       cancelGeneration: vi.fn(async () => true),
     },
     profiles: {
@@ -463,10 +486,83 @@ describe("Local Status", () => {
     window.localStatus = createBridge(false);
     render(<App />);
 
-    await user.click(await screen.findByRole("button", { name: "Choose workspace" }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Choose repository or workspace",
+      }),
+    );
 
     expect((await screen.findAllByText("changed-web")).length).toBeGreaterThan(0);
     expect(window.localStatus.workspace.choose).toHaveBeenCalledOnce();
+  });
+
+  it("labels a directly opened Git root as a repository", async () => {
+    const bridge = createBridge();
+    vi.mocked(bridge.repositories.list).mockResolvedValueOnce({
+      ...repositories,
+      rootKind: "repository",
+      workspaceName: "clean-api",
+      repositories: [
+        {
+          ...repositories.repositories[0],
+          isWorkspaceRoot: true,
+        },
+      ],
+    });
+    window.localStatus = bridge;
+
+    render(<App />);
+
+    expect(await screen.findByText("Local Git repository")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Repository" })).toBeVisible();
+    expect(
+      screen.queryByRole("textbox", { name: "Find a repository" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Filter repositories"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("list", { name: "Repositories" }),
+    ).not.toBeInTheDocument();
+    expect(document.querySelector(".repository-workspace")).toHaveClass(
+      "is-single-repository",
+    );
+  });
+
+  it("shows a Git root with child repositories as a marked hybrid workspace", async () => {
+    const bridge = createBridge();
+    vi.mocked(bridge.repositories.list).mockResolvedValueOnce({
+      ...repositories,
+      rootKind: "hybrid",
+      workspaceName: "argus-full",
+      repositories: [
+        {
+          ...repositories.repositories[0],
+          id: "argus-full",
+          displayName: "argus-full",
+          isWorkspaceRoot: true,
+        },
+        {
+          ...repositories.repositories[1],
+          id: "argus",
+          displayName: "argus",
+          isWorkspaceRoot: false,
+        },
+      ],
+    });
+    window.localStatus = bridge;
+
+    render(<App />);
+
+    expect(await screen.findByText("Git repository workspace")).toBeVisible();
+    expect(
+      screen.getByRole("textbox", { name: "Find a repository" }),
+    ).toBeVisible();
+    expect(screen.getByLabelText("Filter repositories")).toBeVisible();
+    expect(screen.getByTitle("Selected folder")).toHaveTextContent("Root");
+    expect(document.querySelector(".repository-workspace")).not.toHaveClass(
+      "is-single-repository",
+    );
   });
 
   it("preserves fetched repositories when workspace selection is cancelled", async () => {
@@ -478,7 +574,11 @@ describe("Local Status", () => {
     expect(window.localStatus.repositories.list).toHaveBeenCalledOnce();
 
     await user.click(screen.getByRole("button", { name: "engineering" }));
-    await user.click(screen.getByRole("menuitem", { name: "Add workspace…" }));
+    await user.click(
+      screen.getByRole("menuitem", {
+        name: "Open repository or workspace…",
+      }),
+    );
 
     await waitFor(() =>
       expect(window.localStatus.workspace.choose).toHaveBeenCalledOnce(),
@@ -520,7 +620,11 @@ describe("Local Status", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "client-apps" }));
-    await user.click(screen.getByRole("menuitem", { name: "Add workspace…" }));
+    await user.click(
+      screen.getByRole("menuitem", {
+        name: "Open repository or workspace…",
+      }),
+    );
 
     expect(bridge.workspace.choose).toHaveBeenCalledOnce();
   });
@@ -544,7 +648,11 @@ describe("Local Status", () => {
     await user.click(await screen.findByRole("button", { name: "engineering" }));
     await user.click(screen.getByRole("menuitem", { name: /missing/i }));
 
-    expect(screen.getByRole("menu", { name: "Switch workspace" })).toBeVisible();
+    expect(
+      screen.getByRole("menu", {
+        name: "Switch repository or workspace",
+      }),
+    ).toBeVisible();
     expect(screen.getByRole("alert")).toHaveTextContent(
       "That workspace is no longer available.",
     );
@@ -994,6 +1102,401 @@ describe("Local Status", () => {
     expect(
       screen.getByRole("button", { name: "Stash changes" }),
     ).toBeVisible();
+  });
+
+  it("offers an explicit rebase or merge flow when sync histories diverge", async () => {
+    const user = userEvent.setup();
+    window.localStatus.repositories.sync = vi.fn(
+      async (repositoryId, strategy) =>
+        strategy
+          ? {
+              outcome: "synced" as const,
+              repositoryId,
+              upstream: "origin/feature",
+              pulled: 2,
+              pushed: strategy === "merge" ? 2 : 1,
+              incoming: 0,
+              outgoing: 0,
+              syncedAt: new Date().toISOString(),
+            }
+          : {
+              outcome: "diverged" as const,
+              repositoryId,
+              branch: "feature",
+              upstream: "origin/feature",
+              incoming: 2,
+              outgoing: 1,
+              workingTreeDirty: false,
+            },
+    );
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Sync changes: 2 incoming, 1 outgoing",
+      }),
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Local and remote histories diverged",
+    });
+    expect(dialog).toBeVisible();
+    expect(screen.getByRole("radio", { name: /Rebase/ })).toBeChecked();
+    expect(within(dialog).getByText("2 incoming")).toBeVisible();
+    expect(within(dialog).getByText("1 outgoing")).toBeVisible();
+
+    await user.click(screen.getByRole("radio", { name: /Merge/ }));
+    await user.click(screen.getByRole("button", { name: "Merge and sync" }));
+
+    await waitFor(() =>
+      expect(window.localStatus.repositories.sync).toHaveBeenLastCalledWith(
+        "changed-web",
+        "merge",
+      ),
+    );
+    expect(
+      await screen.findByText("Synced changed-web: pulled 2, pushed 2."),
+    ).toBeVisible();
+  });
+
+  it("blocks divergence recovery until working changes are stashed or committed", async () => {
+    const user = userEvent.setup();
+    window.localStatus.repositories.sync = vi.fn(async (repositoryId) => ({
+      outcome: "diverged" as const,
+      repositoryId,
+      branch: "feature",
+      upstream: "origin/feature",
+      incoming: 2,
+      outgoing: 1,
+      workingTreeDirty: true,
+    }));
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Sync changes: 2 incoming, 1 outgoing",
+      }),
+    );
+
+    expect(
+      await screen.findByText("Working changes need a safe place first"),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Rebase and sync" }),
+    ).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Stash changes" }));
+    const stashDialog = await screen.findByRole("dialog", {
+      name: "Stash changes",
+    });
+    expect(stashDialog).toBeVisible();
+    await user.click(
+      within(stashDialog).getByRole("button", {
+        name: "Close stash window",
+      }),
+    );
+    expect(
+      await screen.findByRole("dialog", {
+        name: "Local and remote histories diverged",
+      }),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Stash changes" }));
+    const reopenedStash = await screen.findByRole("dialog", {
+      name: "Stash changes",
+    });
+    await user.click(
+      within(reopenedStash).getByRole("button", { name: "Stash changes" }),
+    );
+    expect(
+      await screen.findByRole("dialog", {
+        name: "Local and remote histories diverged",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Rebase and sync" }),
+    ).toBeEnabled();
+  });
+
+  it("guides a paused rebase and opens an interactive AI conflict terminal", async () => {
+    const user = userEvent.setup();
+    window.localStatus.repositories.sync = vi.fn(async (repositoryId) => ({
+      outcome: "paused" as const,
+      repositoryId,
+      operation: "rebase" as const,
+      branch: "feature",
+      upstream: "origin/feature",
+      conflictFiles: ["src/App.tsx", "src/Details.tsx"],
+      incoming: 2,
+      outgoing: 1,
+    }));
+    window.localStatus.ai.startConflictResolution = vi.fn(async () => ({
+      id: "conflict-terminal",
+      repositoryId: "changed-web",
+      title: "Resolve conflicts with Codex",
+      kind: "shell" as const,
+      status: "running" as const,
+      startedAt: new Date().toISOString(),
+      endedAt: null,
+      exitCode: null,
+      signal: null,
+      truncated: false,
+      buffer: "",
+    }));
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Sync changes: 2 incoming, 1 outgoing",
+      }),
+    );
+
+    expect(
+      await screen.findByRole("dialog", {
+        name: "Resolve conflicts to continue",
+      }),
+    ).toBeVisible();
+    expect(screen.getByText("git rebase --continue")).toBeVisible();
+    expect(screen.getByText("git rebase --abort")).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: "Resolve and stage with Codex" }),
+    );
+
+    expect(
+      await screen.findByRole("dialog", {
+        name: "Resolve conflicts with Codex",
+      }),
+    ).toBeVisible();
+    expect(window.localStatus.ai.startConflictResolution).toHaveBeenCalledWith({
+      repositoryId: "changed-web",
+      provider: "codex",
+    });
+  });
+
+  it("keeps a paused operation recoverable after opening the conflict view", async () => {
+    const user = userEvent.setup();
+    const bridge = createBridge();
+    bridge.repositories.list = vi.fn(
+      async () =>
+        ({
+          ...repositories,
+          repositories: repositories.repositories.map((repository) =>
+            repository.id === "changed-web"
+              ? {
+                  ...repository,
+                  operation: "rebase" as const,
+                  summary: {
+                    ...repository.summary,
+                    files: 1,
+                    conflicts: 1,
+                  },
+                }
+              : repository,
+          ),
+        }) as unknown as Awaited<
+          ReturnType<LocalStatusBridge["repositories"]["list"]>
+        >,
+    );
+    bridge.repositories.changes = vi.fn(async () => ({
+      repositoryId: "changed-web",
+      changes: [
+        {
+          id: "conflict:src/App.tsx",
+          path: "src/App.tsx",
+          previousPath: null,
+          scope: "conflict" as const,
+          kind: "modified" as const,
+          status: "UU",
+        },
+      ],
+    }));
+    window.localStatus = bridge;
+    render(<App />);
+
+    const recovery = await screen.findByRole("region", {
+      name: "Rebase recovery",
+    });
+    expect(within(recovery).getByText("1 conflicted file needs resolution")).toBeVisible();
+    expect(
+      screen.getByRole("button", {
+        name: "Resume rebase recovery: 1 conflicts",
+      }),
+    ).toBeVisible();
+    for (const branchControl of screen.getAllByRole("button", {
+      name: "Rebase paused for changed-web",
+    })) {
+      expect(branchControl).toBeDisabled();
+    }
+
+    await user.click(
+      within(recovery).getByRole("button", { name: "Recovery details" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Resolve conflicts to continue",
+    });
+    const viewConflicts = within(dialog).getByRole("button", {
+      name: "View conflicts",
+    });
+    expect(viewConflicts).toHaveFocus();
+    await user.click(viewConflicts);
+
+    expect(
+      await screen.findByRole("region", { name: "Rebase recovery" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Mark resolved src/App.tsx" }),
+    ).toBeVisible();
+    await user.click(
+      screen.getByRole("button", {
+        name: "Resume rebase recovery: 1 conflicts",
+      }),
+    );
+    expect(
+      await screen.findByRole("dialog", {
+        name: "Resolve conflicts to continue",
+      }),
+    ).toBeVisible();
+    expect(bridge.repositories.sync).not.toHaveBeenCalled();
+  });
+
+  it("opens AI resolution directly from paused recovery context", async () => {
+    const user = userEvent.setup();
+    const bridge = createBridge();
+    bridge.repositories.list = vi.fn(
+      async () =>
+        ({
+          ...repositories,
+          repositories: repositories.repositories.map((repository) =>
+            repository.id === "changed-web"
+              ? {
+                  ...repository,
+                  operation: "merge" as const,
+                  summary: {
+                    ...repository.summary,
+                    files: 1,
+                    conflicts: 1,
+                  },
+                }
+              : repository,
+          ),
+        }) as unknown as Awaited<
+          ReturnType<LocalStatusBridge["repositories"]["list"]>
+        >,
+    );
+    bridge.repositories.changes = vi.fn(async () => ({
+      repositoryId: "changed-web",
+      changes: [
+        {
+          id: "conflict:src/App.tsx",
+          path: "src/App.tsx",
+          previousPath: null,
+          scope: "conflict" as const,
+          kind: "modified" as const,
+          status: "UU",
+        },
+      ],
+    }));
+    bridge.ai.startConflictResolution = vi.fn(async () => ({
+      id: "conflict-terminal",
+      repositoryId: "changed-web",
+      title: "Resolve conflicts with Codex",
+      kind: "shell" as const,
+      status: "running" as const,
+      startedAt: new Date().toISOString(),
+      endedAt: null,
+      exitCode: null,
+      signal: null,
+      truncated: false,
+      buffer: "",
+    }));
+    window.localStatus = bridge;
+    render(<App />);
+
+    const recovery = await screen.findByRole("region", {
+      name: "Merge recovery",
+    });
+    await user.click(
+      await within(recovery).findByRole("button", {
+        name: "Resolve with Codex",
+      }),
+    );
+    expect(
+      await screen.findByRole("dialog", {
+        name: "Resolve conflicts with Codex",
+      }),
+    ).toBeVisible();
+    expect(bridge.ai.startConflictResolution).toHaveBeenCalledWith({
+      repositoryId: "changed-web",
+      provider: "codex",
+    });
+  });
+
+  it("prefills continue without executing it when paused conflicts are staged", async () => {
+    const user = userEvent.setup();
+    const bridge = createBridge();
+    bridge.repositories.list = vi.fn(
+      async () =>
+        ({
+          ...repositories,
+          repositories: repositories.repositories.map((repository) =>
+            repository.id === "changed-web"
+              ? {
+                  ...repository,
+                  operation: "rebase" as const,
+                  summary: {
+                    ...repository.summary,
+                    files: 1,
+                    staged: 1,
+                    conflicts: 0,
+                  },
+                }
+              : repository,
+          ),
+        }) as unknown as Awaited<
+          ReturnType<LocalStatusBridge["repositories"]["list"]>
+        >,
+    );
+    bridge.repositories.changes = vi.fn(async () => ({
+      repositoryId: "changed-web",
+      changes: [
+        {
+          id: "staged:src/App.tsx",
+          path: "src/App.tsx",
+          previousPath: null,
+          scope: "staged" as const,
+          kind: "modified" as const,
+          status: "M",
+        },
+      ],
+    }));
+    window.localStatus = bridge;
+    render(<App />);
+
+    const recovery = await screen.findByRole("region", {
+      name: "Rebase recovery",
+    });
+    expect(
+      within(recovery).getByText(
+        "All conflicts are staged and Git is ready to continue",
+      ),
+    ).toBeVisible();
+    await user.click(
+      within(recovery).getByRole("button", {
+        name: "Continue in terminal",
+      }),
+    );
+
+    expect(bridge.terminals.create).toHaveBeenCalledWith({
+      repositoryId: "changed-web",
+      kind: "shell",
+    });
+    expect(bridge.terminals.rename).toHaveBeenCalledWith(
+      "terminal-1",
+      "changed-web · Sync recovery",
+    );
+    expect(bridge.terminals.write).toHaveBeenCalledWith(
+      "terminal-1",
+      "git rebase --continue",
+    );
   });
 
   it("creates bulk and per-file stashes with clear defaults", async () => {

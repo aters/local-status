@@ -377,6 +377,52 @@ For more information, try '--help'.`, "Codex"),
     );
   });
 
+  it("builds interactive conflict agents with normal permissions and a bounded prompt", async () => {
+    const { directory, runner, settingsStore } = await createRunner();
+
+    const codex = await runner.conflictResolutionSpec(
+      "codex",
+      directory,
+      "rebase",
+    );
+    expect(codex).toMatchObject({
+      executable: expect.stringMatching(/codex$/),
+      cwd: directory,
+      model: "gpt-5.6-luna",
+      title: "Resolve conflicts with Codex",
+    });
+    expect(codex.args).toEqual(
+      expect.arrayContaining([
+        "--sandbox",
+        "workspace-write",
+        "--ask-for-approval",
+        "untrusted",
+        "--no-alt-screen",
+      ]),
+    );
+    expect(codex.args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+    expect(codex.args.at(-1)).toContain("Stop after the conflicts are resolved and staged");
+    expect(codex.args.at(-1)).toContain("Do not run git rebase --continue");
+
+    await settingsStore.setAiPreferences("claude", "sonnet");
+    const claude = await runner.conflictResolutionSpec(
+      "claude",
+      directory,
+      "merge",
+    );
+    expect(claude).toMatchObject({
+      executable: expect.stringMatching(/claude$/),
+      cwd: directory,
+      model: "sonnet",
+      title: "Resolve conflicts with Claude",
+    });
+    expect(claude.args).toEqual(
+      expect.arrayContaining(["--permission-mode", "default"]),
+    );
+    expect(claude.args).not.toContain("--dangerously-skip-permissions");
+    expect(claude.args.at(-1)).toContain("Do not run git merge --continue");
+  });
+
   it("generates with Claude using no tools and structured ephemeral output", async () => {
     const promptPath = join(tmpdir(), `local-status-claude-prompt-${Date.now()}`);
     const argsPath = join(tmpdir(), `local-status-claude-args-${Date.now()}`);

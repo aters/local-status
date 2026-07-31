@@ -19,6 +19,7 @@ function renderSwitcher(
 ) {
   const props: Parameters<typeof WorkspaceSwitcher>[0] = {
     current,
+    rootKind: "workspace",
     recent,
     busy: false,
     error: null,
@@ -37,10 +38,12 @@ describe("WorkspaceSwitcher", () => {
 
     await user.click(screen.getByRole("button", { name: "engineering" }));
 
-    const menu = screen.getByRole("menu", { name: "Switch workspace" });
+    const menu = screen.getByRole("menu", {
+      name: "Switch repository or workspace",
+    });
     expect(within(menu).getAllByText("engineering")).toHaveLength(1);
     expect(within(menu).getAllByText("client-apps")).toHaveLength(1);
-    expect(within(menu).getByText(current.path)).toBeVisible();
+    expect(within(menu).getByText(current.path, { exact: false })).toBeVisible();
     expect(
       within(menu).getByRole("menuitem", { name: /engineering/i }),
     ).toHaveAttribute("aria-current", "true");
@@ -52,7 +55,9 @@ describe("WorkspaceSwitcher", () => {
     );
     await waitFor(() =>
       expect(
-        screen.queryByRole("menu", { name: "Switch workspace" }),
+        screen.queryByRole("menu", {
+          name: "Switch repository or workspace",
+        }),
       ).not.toBeInTheDocument(),
     );
     await waitFor(() =>
@@ -68,10 +73,14 @@ describe("WorkspaceSwitcher", () => {
     trigger.focus();
     await user.keyboard("{ArrowDown}");
 
-    const menu = screen.getByRole("menu", { name: "Switch workspace" });
+    const menu = screen.getByRole("menu", {
+      name: "Switch repository or workspace",
+    });
     const client = within(menu).getByRole("menuitem", { name: /client-apps/i });
     const platform = within(menu).getByRole("menuitem", { name: /platform/i });
-    const add = within(menu).getByRole("menuitem", { name: "Add workspace…" });
+    const add = within(menu).getByRole("menuitem", {
+      name: "Open repository or workspace…",
+    });
     await waitFor(() => expect(client).toHaveFocus());
 
     await user.keyboard("{ArrowDown}");
@@ -113,6 +122,7 @@ describe("WorkspaceSwitcher", () => {
       return (
         <WorkspaceSwitcher
           current={current}
+          rootKind="workspace"
           recent={recent}
           busy={false}
           error={error}
@@ -143,5 +153,35 @@ describe("WorkspaceSwitcher", () => {
     renderSwitcher({ busy: true });
 
     expect(screen.getByRole("button", { name: "engineering" })).toBeDisabled();
+  });
+
+  it("labels a directly opened Git root as a repository", async () => {
+    const user = userEvent.setup();
+    renderSwitcher({ rootKind: "repository" });
+
+    await user.click(screen.getByRole("button", { name: "engineering" }));
+
+    const menu = screen.getByRole("menu", {
+      name: "Switch repository or workspace",
+    });
+    expect(within(menu).getByText("Repository")).toBeVisible();
+    expect(
+      within(menu).getByText(`Repository · ${current.path}`),
+    ).toBeVisible();
+  });
+
+  it("labels a Git root with child repositories as a repository workspace", async () => {
+    const user = userEvent.setup();
+    renderSwitcher({ rootKind: "hybrid" });
+
+    await user.click(screen.getByRole("button", { name: "engineering" }));
+
+    const menu = screen.getByRole("menu", {
+      name: "Switch repository or workspace",
+    });
+    expect(within(menu).getByText("Repository workspace")).toBeVisible();
+    expect(
+      within(menu).getByText(`Repository workspace · ${current.path}`),
+    ).toBeVisible();
   });
 });

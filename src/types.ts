@@ -56,6 +56,7 @@ export interface RepositorySummary {
   groupName: string;
   remoteIdentity: string | null;
   isPrimaryWorktree: boolean;
+  isWorkspaceRoot: boolean;
   favourite: boolean;
   archived: boolean;
   branch: string | null;
@@ -65,6 +66,7 @@ export interface RepositorySummary {
   upstream: string | null;
   incoming: number;
   outgoing: number;
+  operation?: SyncOperation | null;
   summary: {
     files: number;
     staged: number;
@@ -80,6 +82,7 @@ export interface RepositorySummary {
 
 export interface RepositoriesResponse {
   generatedAt: string;
+  rootKind: "repository" | "workspace" | "hybrid";
   workspaceName: string;
   repositories: RepositorySummary[];
 }
@@ -166,7 +169,7 @@ export interface CommitResult {
 }
 
 export type AiProvider = "codex" | "claude";
-export type AiTerminalAction = "install" | "login";
+export type AiTerminalAction = "install" | "login" | "resolve-conflicts";
 
 export interface AiModel {
   id: string;
@@ -190,8 +193,43 @@ export interface AiStatus {
   model: string;
   selectedModels: Record<AiProvider, string>;
   disclosureAccepted: boolean;
+  conflictDisclosureAccepted: boolean;
   providers: Record<AiProvider, AiProviderStatus>;
 }
+
+export type SyncStrategy = "rebase" | "merge";
+export type SyncOperation = SyncStrategy;
+
+export type SyncResult =
+  | {
+      outcome: "synced";
+      repositoryId: string;
+      upstream: string;
+      pulled: number;
+      pushed: number;
+      incoming: number;
+      outgoing: number;
+      syncedAt: string;
+    }
+  | {
+      outcome: "diverged";
+      repositoryId: string;
+      branch: string;
+      upstream: string;
+      incoming: number;
+      outgoing: number;
+      workingTreeDirty: boolean;
+    }
+  | {
+      outcome: "paused";
+      repositoryId: string;
+      operation: SyncOperation;
+      branch: string | null;
+      upstream: string | null;
+      conflictFiles: string[];
+      incoming: number;
+      outgoing: number;
+    };
 
 export interface GeneratedCommitMessage {
   message: string;
@@ -425,15 +463,7 @@ export interface LocalStatusBridge {
       repositoryId: string,
       stashId: string,
     ): Promise<StashDropResult>;
-    sync(repositoryId: string): Promise<{
-      repositoryId: string;
-      upstream: string;
-      pulled: number;
-      pushed: number;
-      incoming: number;
-      outgoing: number;
-      syncedAt: string;
-    }>;
+    sync(repositoryId: string, strategy?: SyncStrategy): Promise<SyncResult>;
     scripts(repositoryId: string): Promise<{
       repositoryId: string;
       scripts: RepositoryScript[];
@@ -481,6 +511,10 @@ export interface LocalStatusBridge {
       snapshotId: string;
       requestId: string;
     }): Promise<GeneratedCommitMessage>;
+    startConflictResolution(input: {
+      repositoryId: string;
+      provider: AiProvider;
+    }): Promise<TerminalSession | null>;
     cancelGeneration(requestId: string): Promise<boolean>;
   };
   profiles: {

@@ -3,6 +3,7 @@ import {
   ChevronDown,
   Folder,
   FolderOpen,
+  GitBranch,
   LoaderCircle,
   Plus,
 } from "lucide-react";
@@ -16,10 +17,11 @@ import {
   useRef,
   useState,
 } from "react";
-import type { Workspace } from "../types";
+import type { RepositoriesResponse, Workspace } from "../types";
 
 export function WorkspaceSwitcher({
   current,
+  rootKind,
   recent,
   busy,
   error,
@@ -28,6 +30,7 @@ export function WorkspaceSwitcher({
   onClearError,
 }: {
   current: Workspace;
+  rootKind: RepositoriesResponse["rootKind"];
   recent: Workspace[];
   busy: boolean;
   error: string | null;
@@ -35,6 +38,12 @@ export function WorkspaceSwitcher({
   onOpenRecent: (path: string) => Promise<boolean>;
   onClearError: () => void;
 }) {
+  const rootKindLabel =
+    rootKind === "repository"
+      ? "Repository"
+      : rootKind === "hybrid"
+        ? "Repository workspace"
+        : "Workspace";
   const [open, setOpen] = useState(false);
   const menuId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -159,6 +168,8 @@ export function WorkspaceSwitcher({
       >
         {busy ? (
           <LoaderCircle className="workspace-switcher__spinner" size={16} />
+        ) : rootKind === "repository" ? (
+          <GitBranch size={16} />
         ) : (
           <FolderOpen size={16} />
         )}
@@ -174,11 +185,11 @@ export function WorkspaceSwitcher({
           id={menuId}
           className="workspace-menu"
           role="menu"
-          aria-label="Switch workspace"
+          aria-label="Switch repository or workspace"
           aria-busy={busy}
           onKeyDown={handleMenuKeyDown}
         >
-          <div className="workspace-menu__heading">Workspaces</div>
+          <div className="workspace-menu__heading">{rootKindLabel}</div>
           <div
             className="workspace-menu__item workspace-menu__item--current"
             role="menuitem"
@@ -186,10 +197,16 @@ export function WorkspaceSwitcher({
             aria-disabled="true"
             title={current.path}
           >
-            <FolderOpen size={16} />
+            {rootKind === "repository" ? (
+              <GitBranch size={16} />
+            ) : (
+              <FolderOpen size={16} />
+            )}
             <span className="workspace-menu__copy">
               <strong>{current.name}</strong>
-              <small>{current.path}</small>
+              <small>
+                {rootKindLabel} · {current.path}
+              </small>
             </span>
             <Check className="workspace-menu__check" size={16} />
           </div>
@@ -244,7 +261,7 @@ export function WorkspaceSwitcher({
               ) : (
                 <Plus size={16} />
               )}
-              Add workspace…
+              Open repository or workspace…
             </button>
           </div>
         </div>

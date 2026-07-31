@@ -263,10 +263,45 @@ async function repositoryIdentity(repository) {
   const groupIdentity = `common:${commonDirectory}`;
   return {
     groupId: createHash("sha256").update(groupIdentity).digest("hex").slice(0, 20),
-    groupName: repositoryNameFromRemote(remoteIdentity, repository.id),
+    groupName: repositoryNameFromRemote(
+      remoteIdentity,
+      repository.displayName ?? repository.id,
+    ),
     remoteIdentity,
     isPrimaryWorktree: gitDirectory === commonDirectory,
   };
+}
+
+async function childRepositoryCandidates(canonicalRoot, gitMarkerOnly) {
+  return (
+    await Promise.all(
+      (await readdir(canonicalRoot, { withFileTypes: true }))
+        .filter((entry) => !entry.name.startsWith("."))
+        .map(async (entry) => {
+          const childPath = join(canonicalRoot, entry.name);
+          if (!entry.isDirectory() && !entry.isSymbolicLink()) return null;
+          try {
+            if (!(await stat(childPath)).isDirectory()) return null;
+            if (
+              gitMarkerOnly &&
+              !(await lstat(join(childPath, ".git"))
+                .then(() => true)
+                .catch(() => false))
+            ) {
+              return null;
+            }
+            return {
+              id: entry.name,
+              displayName: entry.name,
+              path: await realpath(childPath),
+              isWorkspaceRoot: false,
+            };
+          } catch {
+            return null;
+          }
+        }),
+    )
+  ).filter(Boolean);
 }
 
 export async function discoverRepositories({ refresh = false } = {}) {
@@ -285,32 +320,27 @@ export async function discoverRepositories({ refresh = false } = {}) {
 
   const canonicalRoot = await realpath(root);
   const rootIsRepository = await isDirectGitRoot(canonicalRoot);
-  const candidates = rootIsRepository
-    ? [
-        {
-          id: basename(canonicalRoot),
-          path: canonicalRoot,
-        },
-      ]
-    : (
-        await Promise.all(
-          (await readdir(canonicalRoot, { withFileTypes: true }))
-            .filter((entry) => !entry.name.startsWith("."))
-            .map(async (entry) => {
-              const childPath = join(canonicalRoot, entry.name);
-              if (!entry.isDirectory() && !entry.isSymbolicLink()) return null;
-              try {
-                if (!(await stat(childPath)).isDirectory()) return null;
-                return {
-                  id: entry.name,
-                  path: await realpath(childPath),
-                };
-              } catch {
-                return null;
-              }
-            }),
-        )
-      ).filter(Boolean);
+  const childCandidates = await childRepositoryCandidates(
+    canonicalRoot,
+    rootIsRepository,
+  );
+  const childIds = new Set(childCandidates.map((candidate) => candidate.id));
+  const rootDisplayName = basename(canonicalRoot);
+  let rootId = rootDisplayName;
+  while (childIds.has(rootId)) rootId = `${rootId}-root`;
+  const candidates = [
+    ...(rootIsRepository
+      ? [
+          {
+            id: rootId,
+            displayName: rootDisplayName,
+            path: canonicalRoot,
+            isWorkspaceRoot: true,
+          },
+        ]
+      : []),
+    ...childCandidates,
+  ];
   const checks = await Promise.all(
     candidates.map(async (candidate) => {
       const cached = cachedRepositories.get(candidate.id);
@@ -339,7 +369,9 @@ export async function discoverRepositories({ refresh = false } = {}) {
       : await repositoryIdentity(candidate);
     repositories.set(candidate.id, {
       id: candidate.id,
+      displayName: candidate.displayName,
       path: candidate.path,
+      isWorkspaceRoot: candidate.isWorkspaceRoot,
       ...identity,
     });
   }
@@ -501,6 +533,31 @@ async function latestCommit(repositoryPath) {
   return { sha, shortSha, author, authoredAt, subject };
 }
 
+async function gitPathExists(repositoryPath, name) {
+  const output = await execGit(
+    repositoryPath,
+    ["rev-parse", "--git-path", name],
+    { allowFailure: true },
+  );
+  if (!output?.trim()) return false;
+  const candidate = output.trim();
+  const path = isAbsolute(candidate)
+    ? candidate
+    : resolve(repositoryPath, candidate);
+  return lstat(path).then(() => true).catch(() => false);
+}
+
+export async function repositoryOperation(repository) {
+  const [rebaseMerge, rebaseApply, merge] = await Promise.all([
+    gitPathExists(repository.path, "rebase-merge"),
+    gitPathExists(repository.path, "rebase-apply"),
+    gitPathExists(repository.path, "MERGE_HEAD"),
+  ]);
+  if (rebaseMerge || rebaseApply) return "rebase";
+  if (merge) return "merge";
+  return null;
+}
+
 function summarizeChanges(changes) {
   const unique = new Set(changes.map((change) => change.path));
   return {
@@ -521,14 +578,19 @@ export async function repositoryStatus(repository) {
     "--untracked-files=all",
   ]);
   const parsed = parsePorcelainV2(output);
-  const commit = await latestCommit(repository.path);
+  const [commit, operation] = await Promise.all([
+    latestCommit(repository.path),
+    repositoryOperation(repository),
+  ]);
   const summary = summarizeChanges(parsed.changes);
   return {
     id: repository.id,
+    displayName: repository.displayName,
     groupId: repository.groupId,
     groupName: repository.groupName,
     remoteIdentity: repository.remoteIdentity,
     isPrimaryWorktree: repository.isPrimaryWorktree,
+    isWorkspaceRoot: repository.isWorkspaceRoot,
     branch: parsed.branch.head === "(detached)" ? null : parsed.branch.head || null,
     detached: parsed.branch.head === "(detached)",
     unborn:
@@ -538,6 +600,7 @@ export async function repositoryStatus(repository) {
     upstream: parsed.branch.upstream,
     incoming: parsed.branch.behind,
     outgoing: parsed.branch.ahead,
+    operation,
     summary,
     latestCommit: commit,
     fetchedAt: fetchTimes.get(repository.id) ?? null,
@@ -561,10 +624,12 @@ export async function listRepositorySummaries({
       ) {
         return {
           id: repository.id,
+          displayName: repository.displayName,
           groupId: repository.groupId,
           groupName: repository.groupName,
           remoteIdentity: repository.remoteIdentity,
           isPrimaryWorktree: repository.isPrimaryWorktree,
+          isWorkspaceRoot: repository.isWorkspaceRoot,
           archived: true,
           branch: null,
           detached: false,
@@ -573,6 +638,7 @@ export async function listRepositorySummaries({
           upstream: null,
           incoming: 0,
           outgoing: 0,
+          operation: null,
           summary: { files: 0, staged: 0, modified: 0, untracked: 0, conflicts: 0 },
           latestCommit: null,
           fetchedAt: fetchTimes.get(repository.id) ?? null,
@@ -585,10 +651,12 @@ export async function listRepositorySummaries({
       } catch (error) {
         return {
           id: repository.id,
+          displayName: repository.displayName,
           groupId: repository.groupId,
           groupName: repository.groupName,
           remoteIdentity: repository.remoteIdentity,
           isPrimaryWorktree: repository.isPrimaryWorktree,
+          isWorkspaceRoot: repository.isWorkspaceRoot,
           archived: false,
           branch: null,
           detached: false,
@@ -597,6 +665,7 @@ export async function listRepositorySummaries({
           upstream: null,
           incoming: 0,
           outgoing: 0,
+          operation: null,
           summary: { files: 0, staged: 0, modified: 0, untracked: 0, conflicts: 0 },
           latestCommit: null,
           fetchedAt: fetchTimes.get(repository.id) ?? null,
@@ -608,8 +677,19 @@ export async function listRepositorySummaries({
   );
   return {
     generatedAt: new Date().toISOString(),
+    rootKind: [...repositories.values()].some(
+      (repository) => repository.isWorkspaceRoot,
+    )
+      ? repositories.size > 1
+        ? "hybrid"
+        : "repository"
+      : "workspace",
     workspaceName: basename(workspaceRoot()),
-    repositories: summaries.sort((left, right) => left.id.localeCompare(right.id)),
+    repositories: summaries.sort(
+      (left, right) =>
+        Number(right.isWorkspaceRoot) - Number(left.isWorkspaceRoot) ||
+        left.id.localeCompare(right.id),
+    ),
   };
 }
 
@@ -1756,10 +1836,40 @@ export async function fetchOne(repositoryId) {
   return fetchRepository(await getRepository(repositoryId));
 }
 
-export async function syncRepository(repositoryId) {
+function pausedSyncResult(repositoryId, status, fallback) {
+  const conflictFiles = status.changes
+    .filter((change) => change.scope === "conflict")
+    .map((change) => change.path);
+  return {
+    outcome: "paused",
+    repositoryId,
+    operation: status.operation || fallback,
+    branch: status.branch,
+    upstream: status.upstream,
+    conflictFiles,
+    incoming: status.incoming,
+    outgoing: status.outgoing,
+  };
+}
+
+async function syncStatus(repository, fallback = null) {
+  const [status, changes] = await Promise.all([
+    repositoryStatus(repository),
+    repositoryChanges(repository.id),
+  ]);
+  return { ...status, changes: changes.changes, operation: status.operation || fallback };
+}
+
+export async function syncRepository(repositoryId, strategy = null) {
+  if (strategy !== null && !["rebase", "merge"].includes(strategy)) {
+    throw new GitServiceError("Choose rebase or merge to continue.", 400, "INVALID_SYNC_STRATEGY");
+  }
   const repository = await getRepository(repositoryId);
-  const before = await repositoryStatus(repository);
-  if (!before.upstream || !before.branch || before.detached || before.unborn) {
+  const initial = await syncStatus(repository);
+  if (initial.operation) {
+    return pausedSyncResult(repositoryId, initial, initial.operation);
+  }
+  if (!initial.upstream || !initial.branch || initial.detached || initial.unborn) {
     throw new GitServiceError(
       "Configure an upstream branch before syncing this repository.",
       409,
@@ -1770,14 +1880,14 @@ export async function syncRepository(repositoryId) {
   const remote = (
     await execGit(
       repository.path,
-      ["config", "--get", `branch.${before.branch}.remote`],
+      ["config", "--get", `branch.${initial.branch}.remote`],
       { allowFailure: true },
     )
   )?.trim();
   const mergeRef = (
     await execGit(
       repository.path,
-      ["config", "--get", `branch.${before.branch}.merge`],
+      ["config", "--get", `branch.${initial.branch}.merge`],
       { allowFailure: true },
     )
   )?.trim();
@@ -1789,12 +1899,61 @@ export async function syncRepository(repositoryId) {
     );
   }
 
-  await execGit(
-    repository.path,
-    ["pull", "--no-rebase", "--ff-only", "--no-edit"],
-    { timeout: SYNC_TIMEOUT_MS },
-  );
-  fetchTimes.set(repository.id, new Date().toISOString());
+  await fetchRepository(repository);
+  const before = await syncStatus(repository);
+  if (before.operation) {
+    return pausedSyncResult(repositoryId, before, before.operation);
+  }
+
+  const diverged = before.incoming > 0 && before.outgoing > 0;
+  const workingTreeDirty = before.changes.length > 0;
+  if (diverged && !strategy) {
+    return {
+      outcome: "diverged",
+      repositoryId,
+      branch: before.branch,
+      upstream: before.upstream,
+      incoming: before.incoming,
+      outgoing: before.outgoing,
+      workingTreeDirty,
+    };
+  }
+  if (diverged && workingTreeDirty) {
+    throw new GitServiceError(
+      "Commit, revert, or stash working changes before rebasing or merging.",
+      409,
+      "DIRTY_WORKTREE",
+    );
+  }
+
+  if (before.incoming > 0) {
+    const args = diverged
+      ? strategy === "rebase"
+        ? ["rebase", before.upstream]
+        : ["merge", "--no-edit", before.upstream]
+      : ["merge", "--ff-only", before.upstream];
+    try {
+      await execGit(repository.path, args, {
+        timeout: SYNC_TIMEOUT_MS,
+        env: {
+          GIT_EDITOR: "true",
+          GIT_SEQUENCE_EDITOR: "true",
+        },
+      });
+    } catch (error) {
+      const paused = await syncStatus(repository, strategy);
+      if (paused.operation) {
+        return pausedSyncResult(repositoryId, {
+          ...paused,
+          branch: before.branch,
+          upstream: before.upstream,
+        }, strategy);
+      }
+      throw error;
+    }
+  }
+
+  const beforePush = await repositoryStatus(repository);
   await execGit(
     repository.path,
     ["push", remote, `HEAD:${mergeRef}`],
@@ -1802,10 +1961,11 @@ export async function syncRepository(repositoryId) {
   );
   const after = await repositoryStatus(repository);
   return {
+    outcome: "synced",
     repositoryId,
     upstream: before.upstream,
     pulled: before.incoming,
-    pushed: before.outgoing,
+    pushed: beforePush.outgoing,
     incoming: after.incoming,
     outgoing: after.outgoing,
     syncedAt: new Date().toISOString(),

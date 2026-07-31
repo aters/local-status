@@ -138,6 +138,12 @@
   gap: 7px;
 }
 
+:root:is([data-layout="floating"], [data-layout="sculpted"], [data-layout="immersive"])
+  .repository-workspace.is-single-repository
+  .workspace-panels {
+  grid-template-columns: var(--context-panel-width) 4px minmax(320px, 1fr);
+}
+
 :root[data-layout="immersive"]
   :where(.repo-panel, .context-panel, .viewer-panel) {
   border-radius: 22px;

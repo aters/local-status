@@ -27,6 +27,14 @@ function appendBounded(record, data) {
   record.truncated = true;
 }
 
+function terminalStartError(spec, error) {
+  const message = error instanceof Error ? error.message : "Unknown error";
+  if (/posix_spawnp failed/i.test(message)) {
+    return `Local Status could not launch “${spec.executable}”. Verify that it exists and is available in the app's PATH.`;
+  }
+  return `Local Status could not start this terminal: ${message}`;
+}
+
 export class TerminalManager {
   constructor({ spawnPty, emit = () => undefined }) {
     this.spawnPty = spawnPty;
@@ -106,9 +114,7 @@ export class TerminalManager {
       record.endedAt = new Date().toISOString();
       appendBounded(
         record,
-        `\r\nLocal Status could not start this terminal: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }\r\n`,
+        `\r\n${terminalStartError(record.spec, error)}\r\n`,
       );
       this.emit({ type: "updated", session: publicSession(record) });
     }
@@ -205,4 +211,4 @@ export class TerminalManager {
   }
 }
 
-export const __testing = { appendBounded, publicSession };
+export const __testing = { appendBounded, publicSession, terminalStartError };

@@ -98,4 +98,22 @@ describe("TerminalManager", () => {
     expect(events).toHaveLength(eventCount);
     expect(manager.list()).toEqual([]);
   });
+
+  it("explains which executable failed to launch", () => {
+    const manager = new TerminalManager({
+      spawnPty: () => {
+        throw new Error("posix_spawnp failed");
+      },
+    });
+
+    const session = manager.create(spec());
+
+    expect(manager.list()[0]).toMatchObject({
+      id: session.id,
+      status: "failed",
+    });
+    expect(manager.list()[0].buffer).toContain(
+      "could not launch “npm”. Verify that it exists",
+    );
+  });
 });
