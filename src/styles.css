@@ -2165,7 +2165,6 @@ body.is-resizing {
 .commit-modal__codex-title,
 .commit-modal__codex-title > span,
 .commit-modal__ai-settings,
-.commit-modal__ai-settings > small,
 .commit-modal__codex-checking {
   display: flex;
   align-items: center;
@@ -2260,12 +2259,6 @@ body.is-resizing {
 .commit-modal__ai-settings {
   position: relative;
   gap: 7px;
-}
-
-.commit-modal__ai-settings > small {
-  gap: 4px;
-  color: var(--green);
-  font-size: var(--font-caption);
 }
 
 .commit-modal__ai-settings-button {

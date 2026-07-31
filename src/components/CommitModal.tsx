@@ -1,6 +1,5 @@
 import {
   AlertTriangle,
-  Check,
   GitBranch,
   GitCommitHorizontal,
   ChevronDown,
@@ -303,12 +302,6 @@ export function CommitModal({
                 ref={aiSettingsRef}
                 className="commit-modal__ai-settings"
               >
-                {providerStatus?.authenticated && (
-                  <small>
-                    <Check size={11} />
-                    Ready
-                  </small>
-                )}
                 <button
                   ref={aiSettingsButtonRef}
                   className="commit-modal__ai-settings-button"

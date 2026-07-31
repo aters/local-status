@@ -1845,6 +1845,7 @@ describe("Local Status", () => {
       }),
     ).not.toBeChecked();
     expect(within(dialog).getByText("Generate & Commit")).toBeVisible();
+    expect(within(dialog).queryByText("Ready")).not.toBeInTheDocument();
     expect(message).toHaveFocus();
     expect(within(dialog).getByText("src/App.tsx")).toBeVisible();
     expect(within(dialog).queryByLabelText("Provider")).not.toBeInTheDocument();
