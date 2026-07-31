@@ -1839,6 +1839,12 @@ describe("Local Status", () => {
     const message = within(dialog).getByRole("textbox", {
       name: "Commit message",
     });
+    expect(
+      within(dialog).getByRole("switch", {
+        name: "Use AI for Generate and Commit",
+      }),
+    ).not.toBeChecked();
+    expect(within(dialog).getByText("Generate & Commit")).toBeVisible();
     expect(message).toHaveFocus();
     expect(within(dialog).getByText("src/App.tsx")).toBeVisible();
     expect(within(dialog).queryByLabelText("Provider")).not.toBeInTheDocument();
@@ -1887,6 +1893,107 @@ describe("Local Status", () => {
       await screen.findByText("Committed ddddddd: feat: generated commit"),
     ).toBeVisible();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("persists the Generate and Commit opt-in and commits the generated message", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Stage src/App.tsx" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Commit" }));
+    let dialog = await screen.findByRole("dialog", {
+      name: "Commit staged changes",
+    });
+    const aiSwitch = within(dialog).getByRole("switch", {
+      name: "Use AI for Generate and Commit",
+    });
+
+    expect(aiSwitch).not.toBeChecked();
+    await user.click(aiSwitch);
+    expect(aiSwitch).toBeChecked();
+    expect(window.localStorage.getItem("local-status:generate-and-commit")).toBe(
+      "true",
+    );
+    expect(
+      within(dialog).getByRole("button", { name: "Generate & Commit" }),
+    ).toBeEnabled();
+
+    await user.click(
+      within(dialog).getByRole("button", { name: "Close commit window" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Commit" }));
+    dialog = await screen.findByRole("dialog", {
+      name: "Commit staged changes",
+    });
+    expect(
+      within(dialog).getByRole("switch", {
+        name: "Use AI for Generate and Commit",
+      }),
+    ).toBeChecked();
+
+    await user.click(
+      await within(dialog).findByRole("button", {
+        name: "Generate & Commit",
+      }),
+    );
+    await waitFor(() =>
+      expect(window.localStatus.repositories.createCommit).toHaveBeenCalledWith(
+        "changed-web",
+        {
+          message: "feat: generated commit",
+          snapshotId: "c".repeat(64),
+        },
+      ),
+    );
+    expect(window.localStatus.ai.generateCommitMessage).toHaveBeenCalledWith({
+      repositoryId: "changed-web",
+      snapshotId: "c".repeat(64),
+      requestId: expect.any(String),
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps a truncated generated message for review instead of committing it", async () => {
+    const user = userEvent.setup();
+    const bridge = createBridge();
+    bridge.ai.generateCommitMessage = vi.fn(async (input) => ({
+      message: "feat: generated from a large patch",
+      snapshotId: input.snapshotId,
+      patchTruncated: true,
+      provider: "codex" as const,
+      model: "gpt-5.6-luna",
+    }));
+    window.localStatus = bridge;
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Stage src/App.tsx" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Commit" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Commit staged changes",
+    });
+    await user.click(
+      within(dialog).getByRole("switch", {
+        name: "Use AI for Generate and Commit",
+      }),
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Generate & Commit" }),
+    );
+
+    expect(
+      await within(dialog).findByDisplayValue(
+        "feat: generated from a large patch",
+      ),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByText(/drafted this message from a patch capped/i),
+    ).toBeVisible();
+    expect(bridge.repositories.createCommit).not.toHaveBeenCalled();
+    expect(dialog).toBeVisible();
   });
 
   it("installs a missing Claude CLI in a managed terminal", async () => {

@@ -95,6 +95,7 @@ import {
 
 const MonacoDiff = lazy(() => import("./MonacoDiff"));
 const TOAST_DURATION_MS = 4_000;
+const GENERATE_AND_COMMIT_KEY = "local-status:generate-and-commit";
 
 type RepoFilter =
   | "all"
@@ -1966,6 +1967,9 @@ export function RepositoryWorkspace({
   const [commitError, setCommitError] = useState<string | null>(null);
   const [commitPreparing, setCommitPreparing] = useState(false);
   const [committing, setCommitting] = useState(false);
+  const [generateAndCommit, setGenerateAndCommit] = useState(
+    () => window.localStorage.getItem(GENERATE_AND_COMMIT_KEY) === "true",
+  );
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiRequestId, setAiRequestId] = useState<string | null>(null);
@@ -2976,6 +2980,11 @@ export function RepositoryWorkspace({
     setCommitError(null);
   }
 
+  function updateGenerateAndCommit(enabled: boolean) {
+    setGenerateAndCommit(enabled);
+    window.localStorage.setItem(GENERATE_AND_COMMIT_KEY, String(enabled));
+  }
+
   async function locateAiExecutable() {
     if (!aiStatus) return;
     setCommitError(null);
@@ -3172,14 +3181,14 @@ export function RepositoryWorkspace({
   }
 
   async function generateCommitMessage() {
-    if (!selectedId || !commitContext || !aiStatus) return;
+    if (!selectedId || !commitContext || !aiStatus) return null;
     const providerStatus = aiStatus.providers[aiStatus.provider];
-    if (!providerStatus.authenticated) return;
+    if (!providerStatus.authenticated) return null;
     setCommitError(null);
     try {
       if (!aiStatus.disclosureAccepted) {
         const accepted = await api.acceptAiDisclosure(aiStatus.provider);
-        if (!accepted) return;
+        if (!accepted) return null;
         setAiStatus((current) =>
           current ? { ...current, disclosureAccepted: true } : current,
         );
@@ -3200,6 +3209,7 @@ export function RepositoryWorkspace({
           `${result.provider === "codex" ? "Codex" : "Claude"} drafted this message from a patch capped at 1 MB. All staged file names and statistics were included; review the draft carefully.`,
         );
       }
+      return result;
     } catch (caught) {
       const detail = readableError(
         caught,
@@ -3213,10 +3223,17 @@ export function RepositoryWorkspace({
           // Keep the actionable generation error visible.
         }
       }
+      return null;
     } finally {
       setAiGenerating(false);
       setAiRequestId(null);
     }
+  }
+
+  async function generateMessageAndCommit() {
+    const result = await generateCommitMessage();
+    if (!result || result.patchTruncated) return;
+    await submitCommit(result.message);
   }
 
   async function cancelCommitMessageGeneration() {
@@ -3228,13 +3245,14 @@ export function RepositoryWorkspace({
     }
   }
 
-  async function submitCommit() {
-    if (!selectedId || !commitContext || !commitMessage.trim()) return;
+  async function submitCommit(messageOverride?: string) {
+    const message = messageOverride ?? commitMessage;
+    if (!selectedId || !commitContext || !message.trim()) return;
     setCommitting(true);
     setCommitError(null);
     try {
       const result = await api.createCommit(selectedId, {
-        message: commitMessage,
+        message,
         snapshotId: commitContext.snapshotId,
       });
       setChanges(result.changes);
@@ -4235,11 +4253,17 @@ export function RepositoryWorkspace({
           preparing={commitPreparing}
           committing={committing}
           generating={aiGenerating}
+          generateAndCommit={generateAndCommit}
           suspended={Boolean(aiTerminal)}
           onMessageChange={setCommitMessage}
           onClose={closeCommitModal}
-          onCommit={() => void submitCommit()}
+          onCommit={() =>
+            void (generateAndCommit
+              ? generateMessageAndCommit()
+              : submitCommit())
+          }
           onGenerate={() => void generateCommitMessage()}
+          onGenerateAndCommitChange={updateGenerateAndCommit}
           onCancelGeneration={() => void cancelCommitMessageGeneration()}
           onProviderChange={(provider) => void changeAiPreferences(provider)}
           onModelChange={(model) =>

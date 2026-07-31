@@ -30,11 +30,13 @@ interface CommitModalProps {
   preparing: boolean;
   committing: boolean;
   generating: boolean;
+  generateAndCommit: boolean;
   suspended?: boolean;
   onMessageChange: (message: string) => void;
   onClose: () => void;
   onCommit: () => void;
   onGenerate: () => void;
+  onGenerateAndCommitChange: (enabled: boolean) => void;
   onCancelGeneration: () => void;
   onProviderChange: (provider: AiProvider) => void;
   onModelChange: (model: string) => void;
@@ -58,11 +60,13 @@ export function CommitModal({
   preparing,
   committing,
   generating,
+  generateAndCommit,
   suspended = false,
   onMessageChange,
   onClose,
   onCommit,
   onGenerate,
+  onGenerateAndCommitChange,
   onCancelGeneration,
   onProviderChange,
   onModelChange,
@@ -80,12 +84,20 @@ export function CommitModal({
   const commitRef = useRef(onCommit);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const canClose = !committing && !generating;
-  const canCommit = Boolean(context && message.trim() && !preparing && canClose);
   const providerStatus = aiStatus?.providers[aiStatus.provider] ?? null;
   const providerLabel = providerStatus?.label ?? "AI";
   const selectedModel = providerStatus?.models.find(
     (model) => model.id === aiStatus?.model,
   );
+  const canCommit = Boolean(context && message.trim() && !preparing && canClose);
+  const canGenerateAndCommit = Boolean(
+    context &&
+      aiStatus &&
+      providerStatus?.authenticated &&
+      !preparing &&
+      canClose,
+  );
+  const canSubmit = generateAndCommit ? canGenerateAndCommit : canCommit;
 
   useEffect(() => {
     closeRef.current = onClose;
@@ -135,7 +147,7 @@ export function CommitModal({
         closeRef.current();
         return;
       }
-      if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && canCommit) {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && canSubmit) {
         event.preventDefault();
         commitRef.current();
         return;
@@ -160,14 +172,14 @@ export function CommitModal({
 
     document.addEventListener("keydown", handleKeyboard);
     return () => document.removeEventListener("keydown", handleKeyboard);
-  }, [aiSettingsOpen, canClose, canCommit, suspended]);
+  }, [aiSettingsOpen, canClose, canSubmit, suspended]);
 
   function closeFromBackdrop(event: MouseEvent<HTMLDivElement>) {
     if (event.target === event.currentTarget && canClose && !suspended) onClose();
   }
 
   function submitFromTextarea(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
-    if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter" || !canCommit) {
+    if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter" || !canSubmit) {
       return;
     }
     event.preventDefault();
@@ -252,7 +264,7 @@ export function CommitModal({
               value={message}
               maxLength={20_000}
               placeholder="Summarize the staged changes"
-              disabled={preparing || committing}
+              disabled={preparing || committing || generating}
               onChange={(event) => onMessageChange(event.target.value)}
               onKeyDown={submitFromTextarea}
             />
@@ -267,6 +279,25 @@ export function CommitModal({
               <span>
                 <Sparkles size={15} />
                 Draft with AI
+                <label className="commit-modal__ai-toggle">
+                  <span className="commit-modal__ai-toggle-label">
+                    Generate &amp; Commit
+                  </span>
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    aria-label="Use AI for Generate and Commit"
+                    checked={generateAndCommit}
+                    disabled={preparing || generating || committing}
+                    onChange={(event) =>
+                      onGenerateAndCommitChange(event.target.checked)
+                    }
+                  />
+                  <span
+                    className="commit-modal__ai-toggle-track"
+                    aria-hidden="true"
+                  />
+                </label>
               </span>
               <div
                 ref={aiSettingsRef}
@@ -353,8 +384,9 @@ export function CommitModal({
               </div>
             </div>
             <p>
-              {providerLabel} receives the staged diff, file names, statistics,
-              and recent commit subjects. It never commits automatically.
+              {generateAndCommit
+                ? `${providerLabel} will draft the message and create the commit when you choose Generate & Commit. Truncated drafts stop for review.`
+                : `${providerLabel} receives the staged diff, file names, statistics, and recent commit subjects. It never commits automatically.`}
             </p>
             <div className="commit-modal__codex-actions">
               {aiStatus === null ? (
@@ -455,7 +487,7 @@ export function CommitModal({
           <span>
             <kbd>⌘</kbd>
             <kbd>Enter</kbd>
-            to commit
+            {generateAndCommit ? "to generate and commit" : "to commit"}
           </span>
           <div>
             <button
@@ -469,15 +501,23 @@ export function CommitModal({
             <button
               className="primary-button"
               type="button"
-              disabled={!canCommit}
+              disabled={!canSubmit}
               onClick={onCommit}
             >
-              {committing ? (
+              {committing || generating ? (
                 <LoaderCircle className="is-spinning" size={14} />
+              ) : generateAndCommit ? (
+                <Sparkles size={14} />
               ) : (
                 <GitCommitHorizontal size={14} />
               )}
-              {committing ? "Committing…" : "Commit"}
+              {generating
+                ? "Generating…"
+                : committing
+                  ? "Committing…"
+                  : generateAndCommit
+                    ? "Generate & Commit"
+                    : "Commit"}
             </button>
           </div>
         </footer>

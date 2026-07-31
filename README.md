@@ -58,7 +58,9 @@ untracked file permanently deletes it.
 Commit opens a review window and commits staged changes only. Write the message
 yourself or generate an editable draft with Codex CLI or Claude CLI. Choose the
 provider and model in the commit window. Local Status does not read or store CLI
-credentials.
+credentials. The saved Generate & Commit switch is off by default. When enabled,
+the configured provider drafts the message before Local Status creates the
+commit; truncated drafts stop in the editor for review instead.
 
 Stash saves all current changes or one selected file. Bulk stashes include
 untracked files by default but never include ignored files. The Stashes tab
